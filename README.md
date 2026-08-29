@@ -1,8 +1,7 @@
 # Ticker
 
 A mobile app for tracking the share price of publicly listed companies.
-Built with Expo and React Native, so one TypeScript codebase runs on both
-iOS and Android.
+Built with Flutter, so one Dart codebase runs on both iOS and Android.
 
 ## What it does
 
@@ -21,20 +20,19 @@ iOS and Android.
 ## Running it
 
 ```bash
-npm install
-npm start
+flutter pub get
+flutter run
 ```
 
-Then open the project on your phone with the **Expo Go** app by scanning the QR
-code in the terminal. No Xcode or Android Studio needed for this.
-
-To run on a simulator instead, use `npm run ios` or `npm run android`.
+`flutter run` picks up a connected device or a running simulator/emulator; use
+`flutter devices` to see what it can find. Building for iOS needs Xcode, and
+for Android needs the Android SDK — `flutter doctor` will say what is missing.
 
 ## Checks
 
 ```bash
-npm test        # unit and render tests
-npm run typecheck
+flutter test        # unit and widget tests
+flutter analyze
 ```
 
 ## Price data
@@ -49,9 +47,9 @@ Prices come from Yahoo Finance's public endpoints:
 No API key or signup is needed. Two caveats worth knowing:
 
 - **These endpoints are undocumented.** Yahoo can change or withdraw them
-  without notice. All parsing is isolated in `src/api/parse.ts` and covered by
-  tests, so adapting to a shape change — or swapping in a different provider —
-  means editing one file.
+  without notice. All parsing is isolated in `lib/api/parse.dart` and covered
+  by tests, so adapting to a shape change — or swapping in a different provider
+  — means editing one file.
 - **They rate limit.** Requests present a browser user agent and fall back from
   `query1` to `query2`, but a burst of refreshes can still return HTTP 429. The
   UI surfaces that as a per-symbol message rather than blanking the list.
@@ -66,29 +64,34 @@ trading decisions.
 ## Layout
 
 ```
-App.tsx                  Providers and root
-src/navigation.tsx       Stack navigator and route types
-src/api/
-  types.ts               Quote, History, SearchResult, range definitions
-  parse.ts               Pure parsers for the Yahoo payloads (unit tested)
-  yahoo.ts               fetch, host fallback, timeouts, error mapping
-src/state/
-  watchlist.tsx          Watchlist context: refresh, polling, add/remove/reorder
-  storage.ts             AsyncStorage persistence
-src/screens/             Watchlist, Search, Detail
-src/components/          QuoteRow, PriceChart, Sparkline, ChangePill
-src/utils/
-  format.ts              Price, change and date formatting
-  chart.ts               SVG path geometry (unit tested)
-src/__tests__/           Tests and payload fixtures
+lib/main.dart            App root, providers and theme wiring
+lib/models/
+  types.dart             PricePoint, Quote, History, SearchResult, RangeKey
+lib/api/
+  parse.dart             Pure parsers for the Yahoo payloads (unit tested)
+  yahoo.dart             HTTP, host fallback, timeouts, error mapping
+lib/state/
+  watchlist.dart         Watchlist model: refresh, polling, add/remove/reorder
+  storage.dart           SharedPreferences persistence
+lib/screens/             Watchlist, Search, Detail
+lib/widgets/             QuoteRow, PriceChart, Sparkline, ChangePill
+lib/utils/
+  format.dart            Price, change and date formatting
+  chart.dart             Chart geometry (unit tested)
+lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
+test/                    Tests and payload fixtures
 ```
 
-Charts are drawn with plain SVG paths via `react-native-svg` rather than a
-charting library — the shapes are simple and it keeps the bundle small.
+State is a single `ChangeNotifier` (`WatchlistModel`) exposed with `provider`.
+It owns the refresh, the 60-second poll and the persistence, and it observes
+the app lifecycle so polling stops when the app is backgrounded.
+
+Charts are drawn with `CustomPainter` rather than a charting package — the
+shapes are simple and it keeps the dependency list and the app size down.
 
 ## Ideas for later
 
 - Price alerts and push notifications when a threshold is crossed
 - Holdings and cost basis, so the list shows gain/loss rather than day change
-- Drag-to-reorder in place of the long-press menu
+- Drag-to-reorder in place of the long-press sheet
 - A home screen widget
