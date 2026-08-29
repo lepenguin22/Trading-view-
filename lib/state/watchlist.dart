@@ -18,9 +18,13 @@ const _refreshInterval = Duration(seconds: 60);
 class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   WatchlistModel({YahooApi? api, WatchlistStorage? storage})
     : _api = api ?? YahooApi(),
+      // An API handed in from outside outlives this model, so closing it here
+      // would break the screens still sharing it.
+      _ownsApi = api == null,
       _storage = storage ?? WatchlistStorage();
 
   final YahooApi _api;
+  final bool _ownsApi;
   final WatchlistStorage _storage;
 
   List<String> _symbols = const [];
@@ -204,7 +208,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     _stopPolling();
     _inFlight?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    _api.dispose();
+    if (_ownsApi) _api.dispose();
     super.dispose();
   }
 }

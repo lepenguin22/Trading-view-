@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'api/yahoo.dart';
 import 'background/alert_worker.dart';
 import 'screens/watchlist_screen.dart';
 import 'state/alerts.dart';
@@ -25,10 +26,10 @@ Future<void> main() async {
 }
 
 class TickerApp extends StatelessWidget {
-  const TickerApp({super.key, this.createModel, this.createAlerts});
+  const TickerApp({super.key, this.createApi, this.createAlerts});
 
-  /// Overridden in tests to inject a model whose feed is faked.
-  final WatchlistModel Function()? createModel;
+  /// Overridden in tests to supply an API over a faked HTTP client.
+  final YahooApi Function()? createApi;
 
   /// Overridden in tests to avoid touching real notifications or scheduling.
   final AlertsModel Function()? createAlerts;
@@ -37,6 +38,14 @@ class TickerApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // One client for the whole app: the watchlist poll, the detail chart
+        // and search all share it, so connections are reused rather than a
+        // fresh pool being opened per screen.
+        Provider<YahooApi>(
+          create: (_) => createApi?.call() ?? YahooApi(),
+          dispose: (_, api) => api.dispose(),
+          lazy: false,
+        ),
         // start() hydrates from storage and begins polling; it is kicked off
         // here rather than in a widget's initState so a rebuild cannot restart
         // it.
@@ -44,7 +53,8 @@ class TickerApp extends StatelessWidget {
           create: (_) => (createAlerts?.call() ?? AlertsModel())..start(),
         ),
         ChangeNotifierProxyProvider<AlertsModel, WatchlistModel>(
-          create: (_) => (createModel?.call() ?? WatchlistModel())..start(),
+          create: (context) =>
+              WatchlistModel(api: context.read<YahooApi>())..start(),
           // Handing the watchlist a reference to the alerts model lets a
           // foreground refresh fire due alerts immediately, rather than
           // leaving them to the next background pass.

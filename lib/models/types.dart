@@ -26,6 +26,83 @@ class PricePoint {
   String toString() => 'PricePoint($t, $c)';
 }
 
+/// One OHLC bar: the open, high, low and close over a single interval.
+///
+/// Separate from [PricePoint], which stays a bare close for the watchlist
+/// sparkline. Only the detail chart needs the full bar, and [Quote.spark] is
+/// persisted, so widening that type would need a cache migration for no gain.
+class Candle {
+  const Candle({
+    required this.t,
+    required this.open,
+    required this.high,
+    required this.low,
+    required this.close,
+  });
+
+  /// Epoch seconds at the start of the interval.
+  final int t;
+  final double open;
+  final double high;
+  final double low;
+  final double close;
+
+  /// True when the bar closed at or above where it opened. A doji (open ==
+  /// close) is drawn as up, matching the convention in most trading apps.
+  bool get isUp => close >= open;
+
+  @override
+  bool operator ==(Object other) =>
+      other is Candle &&
+      other.t == t &&
+      other.open == open &&
+      other.high == high &&
+      other.low == low &&
+      other.close == close;
+
+  @override
+  int get hashCode => Object.hash(t, open, high, low, close);
+
+  @override
+  String toString() => 'Candle($t, o:$open h:$high l:$low c:$close)';
+}
+
+/// Aggregates [candles] into at most [maxCount] bars.
+///
+/// A phone is only a few hundred pixels wide, so a 5Y weekly series drawn one
+/// bar per point is an unreadable smear. Merging adjacent bars is the same
+/// operation as moving to a coarser timeframe: the bucket opens where the
+/// first bar opened, closes where the last one closed, and spans the extremes
+/// in between.
+List<Candle> aggregateCandles(List<Candle> candles, int maxCount) {
+  if (maxCount <= 0) return const [];
+  if (candles.length <= maxCount) return candles;
+
+  // Round up so the bucket count never exceeds maxCount.
+  final bucketSize = (candles.length + maxCount - 1) ~/ maxCount;
+
+  final out = <Candle>[];
+  for (var start = 0; start < candles.length; start += bucketSize) {
+    final end = (start + bucketSize).clamp(0, candles.length);
+    var high = candles[start].high;
+    var low = candles[start].low;
+    for (var i = start + 1; i < end; i++) {
+      if (candles[i].high > high) high = candles[i].high;
+      if (candles[i].low < low) low = candles[i].low;
+    }
+    out.add(
+      Candle(
+        t: candles[start].t,
+        open: candles[start].open,
+        high: high,
+        low: low,
+        close: candles[end - 1].close,
+      ),
+    );
+  }
+  return out;
+}
+
 /// Everything the UI needs to render one row of the watchlist.
 class Quote {
   const Quote({
@@ -110,7 +187,7 @@ class History {
   const History({
     required this.symbol,
     required this.range,
-    required this.points,
+    required this.candles,
     required this.currency,
     required this.first,
     required this.last,
@@ -120,8 +197,13 @@ class History {
 
   final String symbol;
   final RangeKey range;
-  final List<PricePoint> points;
+
+  /// Full OHLC bars. The line chart reads [closes] from these.
+  final List<Candle> candles;
   final String currency;
+
+  /// Closing prices, for the line view and any close-based geometry.
+  List<double> get closes => [for (final c in candles) c.close];
 
   /// Baseline the range's change is measured against.
   final double first;

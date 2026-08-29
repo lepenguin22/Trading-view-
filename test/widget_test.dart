@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ticker/api/yahoo.dart';
 import 'package:ticker/main.dart';
 import 'package:ticker/state/alerts.dart';
-import 'package:ticker/state/watchlist.dart';
+import 'package:ticker/widgets/price_chart.dart';
 
 import 'helpers.dart';
 
@@ -34,7 +34,7 @@ void main() {
   /// reach for a platform that does not exist under `flutter test`.
   Widget appWith(http.Client client) {
     return TickerApp(
-      createModel: () => WatchlistModel(api: YahooApi(client: client)),
+      createApi: () => YahooApi(client: client),
       createAlerts: () =>
           AlertsModel(notifier: notifier, scheduler: (_) async {}),
     );
@@ -237,6 +237,65 @@ void main() {
 
     expect(notifier.fired.map((a) => a.id), ['due']);
     expect(notifier.prices.single, 196.5);
+
+    await teardown(tester);
+  });
+
+  testWidgets('shows candlesticks by default and toggles to a line', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // The toggle offers the *other* style, so "Line" showing means candles
+    // are what is currently drawn.
+    expect(find.widgetWithText(TextButton, 'Line'), findsOneWidget);
+    expect(find.byType(PriceChart), findsOneWidget);
+    expect(
+      tester.widget<PriceChart>(find.byType(PriceChart)).style,
+      ChartStyle.candles,
+    );
+
+    await tester.tap(find.widgetWithText(TextButton, 'Line'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<PriceChart>(find.byType(PriceChart)).style,
+      ChartStyle.line,
+    );
+    expect(find.widgetWithText(TextButton, 'Candles'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('scrubbing the chart reveals the bar OHLC', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // Nothing scrubbed yet, so the header shows the range caption instead.
+    expect(find.text('O '), findsNothing);
+
+    final chart = find.byType(PriceChart);
+    final centre = tester.getCenter(chart);
+    final gesture = await tester.startGesture(centre);
+    await gesture.moveBy(const Offset(20, 0));
+    await tester.pumpAndSettle();
+
+    // The O/H/L/C strip replaces the caption while a finger is down.
+    expect(find.text('O '), findsOneWidget);
+    expect(find.text('H '), findsOneWidget);
+    expect(find.text('L '), findsOneWidget);
+    expect(find.text('C '), findsOneWidget);
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(find.text('O '), findsNothing);
 
     await teardown(tester);
   });

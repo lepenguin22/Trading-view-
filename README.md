@@ -10,9 +10,10 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
   every 60 seconds while the app is on screen.
 - **Search** — find a company, fund or index by name or ticker. Covers global
   exchanges (`AAPL`, `VOD.L`, `BMW.DE`, `BTC-USD`, `^FTSE`).
-- **Detail** — a price chart over 1D / 1W / 1M / 3M / 1Y / 5Y that you can drag
-  across to read individual points, plus previous close, day high/low and
-  exchange.
+- **Detail** — a candlestick chart over 1D / 1W / 1M / 3M / 1Y / 5Y that you
+  can drag across to read each bar's open, high, low and close, plus previous
+  close, day high/low and exchange. A line view is a tap away for reading the
+  shape of a long range.
 - **Price alerts** — set an alert on any symbol for a price rising to or above,
   or falling to or below, a level you choose. When it fires you get a
   notification, and the alert switches itself off so it does not nag.
@@ -37,6 +38,30 @@ for Android needs the Android SDK — `flutter doctor` will say what is missing.
 flutter test        # unit and widget tests
 flutter analyze
 ```
+
+## Charts
+
+The detail screen draws candlesticks by default: a body from open to close,
+green when the bar closed at or above its open and red when it closed below,
+with a wick spanning the high and low. Dragging across the chart puts an
+O/H/L/C readout in the header for the bar under your finger. The toggle beside
+the range buttons switches to a close-price line, which is easier to read for
+the overall shape of a 1Y or 5Y range.
+
+**Bars are aggregated to fit the screen.** A phone is a few hundred pixels
+wide, and a 5Y weekly series is around 260 bars — drawn one-per-point that is
+an unreadable smear. Adjacent bars are merged until they fit, which is the same
+operation as moving to a coarser timeframe: the merged bar opens where the
+first opened, closes where the last closed, and spans the extremes between. So
+a 5Y chart shows something closer to monthly bars than weekly ones. The
+aggregation is pure and unit tested.
+
+The watchlist sparklines stay simple lines — candles at 56x28 pixels would be
+noise, not information.
+
+A bar is only drawn when the feed supplies all four of open, high, low and
+close. Yahoo pads its arrays with nulls for halted intervals, and inventing an
+open from a close would draw a candle that never traded.
 
 ## How price alerts work
 
@@ -128,7 +153,7 @@ trading decisions.
 ```
 lib/main.dart            App root, providers and theme wiring
 lib/models/
-  types.dart             PricePoint, Quote, History, SearchResult, RangeKey
+  types.dart             PricePoint, Candle, Quote, History, RangeKey
   alert.dart             PriceAlert and the pure firing logic (unit tested)
 lib/api/
   parse.dart             Pure parsers for the Yahoo payloads (unit tested)
@@ -146,7 +171,7 @@ lib/screens/             Watchlist, Search, Detail, Alerts
 lib/widgets/             QuoteRow, PriceChart, Sparkline, ChangePill, AlertSheet
 lib/utils/
   format.dart            Price, change and date formatting
-  chart.dart             Chart geometry (unit tested)
+  chart.dart             Line and candle geometry, aggregation (unit tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
 test/                    Tests and payload fixtures
 ```
@@ -157,6 +182,9 @@ the app lifecycle so polling stops when the app is backgrounded.
 
 Charts are drawn with `CustomPainter` rather than a charting package — the
 shapes are simple and it keeps the dependency list and the app size down.
+
+One `YahooApi` is provided to the whole app, so the watchlist poll, the detail
+chart and search share a single HTTP client and its connection pool.
 
 ## Ideas for later
 

@@ -86,6 +86,45 @@ List<PricePoint> parsePoints(Map<String, dynamic> result) {
   return points;
 }
 
+/// Zips the parallel timestamp and OHLC arrays into bars.
+///
+/// Yahoo pads every array with nulls for halted or not-yet-traded intervals,
+/// and occasionally has a close but not a full bar. A bar is kept only when
+/// all four values are present, so a candle is never drawn from invented
+/// numbers; open/high/low are not defaulted from the close.
+List<Candle> parseCandles(Map<String, dynamic> result) {
+  final timestamps = _list(result['timestamp']);
+  final indicators = _map(result['indicators']) ?? const <String, dynamic>{};
+  final quoteArr = _list(indicators['quote']);
+  final quote0 = quoteArr.isEmpty
+      ? null
+      : _map(quoteArr.first) ?? const <String, dynamic>{};
+
+  final opens = _list(quote0?['open']);
+  final highs = _list(quote0?['high']);
+  final lows = _list(quote0?['low']);
+  final closes = _list(quote0?['close']);
+
+  var n = timestamps.length;
+  for (final series in [opens, highs, lows, closes]) {
+    if (series.length < n) n = series.length;
+  }
+
+  final candles = <Candle>[];
+  for (var i = 0; i < n; i++) {
+    final t = _num(timestamps[i]);
+    final o = _num(opens[i]);
+    final h = _num(highs[i]);
+    final l = _num(lows[i]);
+    final c = _num(closes[i]);
+    if (t == null || o == null || h == null || l == null || c == null) {
+      continue;
+    }
+    candles.add(Candle(t: t.toInt(), open: o, high: h, low: l, close: c));
+  }
+  return candles;
+}
+
 /// Builds a watchlist quote from a `range=1d` chart payload.
 Quote parseQuote(Object? payload, {int? fetchedAt}) {
   final result = _chartResult(payload);
@@ -137,9 +176,9 @@ Quote parseQuote(Object? payload, {int? fetchedAt}) {
 History parseHistory(Object? payload, RangeKey range) {
   final result = _chartResult(payload);
   final meta = _map(result['meta']) ?? const <String, dynamic>{};
-  final points = parsePoints(result);
+  final candles = parseCandles(result);
 
-  if (points.isEmpty) {
+  if (candles.isEmpty) {
     throw const FeedException('No price history available for this range');
   }
 
@@ -149,16 +188,16 @@ History parseHistory(Object? payload, RangeKey range) {
   final baseline = range == RangeKey.d1
       ? (_num(meta['chartPreviousClose']) ??
             _num(meta['previousClose']) ??
-            points.first.c)
-      : points.first.c;
+            candles.first.close)
+      : candles.first.close;
 
-  final last = points.last.c;
+  final last = candles.last.close;
   final change = last - baseline;
 
   return History(
     symbol: _str(meta['symbol']) ?? '',
     range: range,
-    points: points,
+    candles: candles,
     currency: _str(meta['currency']) ?? 'USD',
     first: baseline,
     last: last,
