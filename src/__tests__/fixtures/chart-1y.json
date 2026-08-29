@@ -1,0 +1,35 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "GBp",
+          "symbol": "VOD.L",
+          "exchangeName": "LSE",
+          "fullExchangeName": "LSE",
+          "instrumentType": "EQUITY",
+          "regularMarketPrice": 78.4,
+          "chartPreviousClose": 70.0,
+          "previousClose": 77.9,
+          "shortName": "VODAFONE GROUP PLC",
+          "dataGranularity": "1d",
+          "range": "1y"
+        },
+        "timestamp": [1686000000, 1686086400, 1686172800, 1686259200],
+        "indicators": {
+          "quote": [
+            {
+              "close": [70.0, 74.0, null, 78.4],
+              "open": [69.5, 70.2, null, 77.0],
+              "high": [70.8, 74.6, null, 78.9],
+              "low": [69.1, 69.9, null, 76.8],
+              "volume": [55000000, 61000000, null, 48000000]
+            }
+          ],
+          "adjclose": [{ "adjclose": [69.1, 73.0, null, 78.4] }]
+        }
+      }
+    ],
+    "error": null
+  }
+}

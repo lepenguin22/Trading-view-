@@ -1,0 +1,46 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "USD",
+          "symbol": "AAPL",
+          "exchangeName": "NMS",
+          "fullExchangeName": "NasdaqGS",
+          "instrumentType": "EQUITY",
+          "firstTradeDate": 345479400,
+          "regularMarketTime": 1717595400,
+          "gmtoffset": -14400,
+          "timezone": "EDT",
+          "exchangeTimezoneName": "America/New_York",
+          "regularMarketPrice": 196.5,
+          "chartPreviousClose": 194.0,
+          "previousClose": 194.0,
+          "scale": 3,
+          "priceHint": 2,
+          "marketState": "REGULAR",
+          "regularMarketDayHigh": 197.1,
+          "regularMarketDayLow": 193.8,
+          "regularMarketVolume": 48213400,
+          "longName": "Apple Inc.",
+          "shortName": "Apple Inc.",
+          "dataGranularity": "5m",
+          "range": "1d"
+        },
+        "timestamp": [1717594200, 1717594500, 1717594800, 1717595100, 1717595400],
+        "indicators": {
+          "quote": [
+            {
+              "close": [194.2, 195.0, null, 195.8, 196.5],
+              "open": [194.0, 194.2, null, 195.0, 195.8],
+              "high": [194.6, 195.3, null, 196.0, 197.1],
+              "low": [193.8, 194.1, null, 194.9, 195.6],
+              "volume": [1200000, 900000, null, 850000, 1100000]
+            }
+          ]
+        }
+      }
+    ],
+    "error": null
+  }
+}
