@@ -34,6 +34,12 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   CancelToken? _inFlight;
   bool _disposed = false;
 
+  /// Called with the full quote map after every refresh that returned data.
+  ///
+  /// Set by the app so price alerts can be evaluated the moment a foreground
+  /// refresh lands, instead of waiting for the next background check.
+  Future<void> Function(Map<String, Quote>)? onQuotes;
+
   /// Watchlist order, as the user arranged it.
   List<String> get symbols => List.unmodifiable(_symbols);
 
@@ -121,6 +127,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
         _quotes = next;
         _lastUpdated = DateTime.now().millisecondsSinceEpoch;
         unawaited(_storage.saveCachedQuotes(next));
+        unawaited(_notifyQuoteListeners(next));
       }
       _errors = batch.errors;
     } finally {
@@ -129,6 +136,16 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
         if (identical(_inFlight, token)) _inFlight = null;
         notifyListeners();
       }
+    }
+  }
+
+  /// Alert evaluation must never take the refresh down with it: a failure
+  /// here means no notification, not a broken watchlist.
+  Future<void> _notifyQuoteListeners(Map<String, Quote> quotes) async {
+    try {
+      await onQuotes?.call(quotes);
+    } catch (error, stack) {
+      debugPrint('Alert evaluation failed: $error\n$stack');
     }
   }
 

@@ -66,5 +66,17 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- Background price-alert checks. The identifier must match
+	     alertTaskUniqueName in lib/background/alert_worker.dart. iOS decides
+	     when (and whether) these run; see the README. -->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>ticker.price-alerts</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 </dict>
 </plist>

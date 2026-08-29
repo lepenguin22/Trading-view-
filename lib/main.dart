@@ -1,27 +1,57 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:workmanager/workmanager.dart';
 
+import 'background/alert_worker.dart';
 import 'screens/watchlist_screen.dart';
+import 'state/alerts.dart';
 import 'state/watchlist.dart';
 import 'theme/app_theme.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Registering the dispatcher is what lets a scheduled task wake the app;
+  // the schedule itself is (de)registered by AlertsModel as alerts come and
+  // go. A failure here must not stop the app launching — the user still gets
+  // a working watchlist, just no background alerts.
+  try {
+    await Workmanager().initialize(alertCallbackDispatcher);
+  } catch (error, stack) {
+    debugPrint('Background alerts unavailable: $error\n$stack');
+  }
+
   runApp(const TickerApp());
 }
 
 class TickerApp extends StatelessWidget {
-  const TickerApp({super.key, this.createModel});
+  const TickerApp({super.key, this.createModel, this.createAlerts});
 
   /// Overridden in tests to inject a model whose feed is faked.
   final WatchlistModel Function()? createModel;
 
+  /// Overridden in tests to avoid touching real notifications or scheduling.
+  final AlertsModel Function()? createAlerts;
+
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      // start() hydrates from storage and begins polling; it is kicked off
-      // here rather than in a widget's initState so a rebuild cannot restart
-      // it.
-      create: (_) => (createModel?.call() ?? WatchlistModel())..start(),
+    return MultiProvider(
+      providers: [
+        // start() hydrates from storage and begins polling; it is kicked off
+        // here rather than in a widget's initState so a rebuild cannot restart
+        // it.
+        ChangeNotifierProvider(
+          create: (_) => (createAlerts?.call() ?? AlertsModel())..start(),
+        ),
+        ChangeNotifierProxyProvider<AlertsModel, WatchlistModel>(
+          create: (_) => (createModel?.call() ?? WatchlistModel())..start(),
+          // Handing the watchlist a reference to the alerts model lets a
+          // foreground refresh fire due alerts immediately, rather than
+          // leaving them to the next background pass.
+          update: (_, alerts, watchlist) =>
+              watchlist!..onQuotes = alerts.evaluateAgainst,
+        ),
+      ],
       child: MaterialApp(
         title: 'Ticker',
         debugShowCheckedModeBanner: false,
