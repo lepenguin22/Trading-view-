@@ -40,7 +40,7 @@ class _SparklinePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final chart = buildChart(
-      points,
+      [for (final p in points) p.c],
       width: size.width,
       height: size.height,
       padding: 2,

@@ -104,13 +104,93 @@ void main() {
       expect(h.last, 78.4);
       expect(h.change, closeTo(8.4, 1e-10));
       expect(h.changePercent, closeTo((8.4 / 70) * 100, 1e-10));
-      expect(h.points, hasLength(3));
+      expect(h.candles, hasLength(3));
     });
 
     test('raises rather than returning an empty chart', () {
       expect(
         () => parseHistory(chartEmpty, RangeKey.m1),
         throwsA(isA<FeedException>()),
+      );
+    });
+  });
+
+  group('parseCandles', () {
+    test('reads full OHLC bars from a chart payload', () {
+      final candles = parseCandles(
+        (chart1d as Map<String, dynamic>)['chart']['result'][0]
+            as Map<String, dynamic>,
+      );
+
+      // Five timestamps, one of which is a null gap across every series.
+      expect(candles, hasLength(4));
+      expect(candles.first.open, 194.0);
+      expect(candles.first.high, 194.6);
+      expect(candles.first.low, 193.8);
+      expect(candles.first.close, 194.2);
+      expect(candles.last.close, 196.5);
+    });
+
+    test('drops a bar missing any of its four values', () {
+      // A close alone is not a candle: open, high and low are never invented.
+      final candles = parseCandles({
+        'timestamp': [1, 2, 3],
+        'indicators': {
+          'quote': [
+            {
+              'open': [10, null, 12],
+              'high': [11, 12, 13],
+              'low': [9, 10, 11],
+              'close': [10.5, 11.5, 12.5],
+            },
+          ],
+        },
+      });
+      expect(candles.map((c) => c.t), [1, 3]);
+    });
+
+    test('stops at the shortest of the parallel arrays', () {
+      final candles = parseCandles({
+        'timestamp': [1, 2, 3],
+        'indicators': {
+          'quote': [
+            {
+              'open': [1, 2, 3],
+              'high': [2, 3, 4],
+              'low': [0, 1],
+              'close': [1.5, 2.5, 3.5],
+            },
+          ],
+        },
+      });
+      expect(candles, hasLength(2));
+    });
+
+    test('is empty when the payload carries no OHLC at all', () {
+      expect(parseCandles(<String, dynamic>{}), isEmpty);
+      expect(
+        parseCandles({
+          'timestamp': [1, 2],
+        }),
+        isEmpty,
+      );
+    });
+  });
+
+  group('candle direction', () {
+    test('an up bar closes at or above its open', () {
+      expect(
+        const Candle(t: 0, open: 10, high: 12, low: 9, close: 11).isUp,
+        isTrue,
+      );
+      // A doji counts as up, matching the usual charting convention.
+      expect(
+        const Candle(t: 0, open: 10, high: 12, low: 9, close: 10).isUp,
+        isTrue,
+      );
+      expect(
+        const Candle(t: 0, open: 10, high: 12, low: 9, close: 9.5).isUp,
+        isFalse,
       );
     });
   });

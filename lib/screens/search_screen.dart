@@ -20,7 +20,9 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final _api = YahooApi();
+  /// Shared with the rest of the app, so this screen neither creates nor
+  /// closes it.
+  late final YahooApi _api = context.read<YahooApi>();
   final _controller = TextEditingController();
 
   Timer? _debounceTimer;
@@ -45,7 +47,6 @@ class _SearchScreenState extends State<SearchScreen> {
     _debounceTimer?.cancel();
     _inFlight?.cancel();
     _controller.dispose();
-    _api.dispose();
     super.dispose();
   }
 

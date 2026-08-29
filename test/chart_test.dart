@@ -2,9 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ticker/models/types.dart';
 import 'package:ticker/utils/chart.dart';
 
-List<PricePoint> series(List<double> values) => [
-  for (var i = 0; i < values.length; i++) PricePoint(t: i, c: values[i]),
-];
+/// buildChart works on bare close prices, so a series is just its values.
+List<double> series(List<double> values) => values;
 
 void main() {
   group('buildChart', () {
@@ -111,6 +110,120 @@ void main() {
 
     test('reports -1 when there is no series', () {
       expect(nearestIndex(const [], 10), -1);
+    });
+  });
+
+  group('maxCandlesFor', () {
+    test('scales with the available width', () {
+      // Each candle needs minBodyWidth plus its share of the gap.
+      expect(maxCandlesFor(400), greaterThan(maxCandlesFor(200)));
+      expect(maxCandlesFor(0), 0);
+    });
+
+    test('always leaves room for at least one candle', () {
+      expect(maxCandlesFor(1), 1);
+    });
+  });
+
+  group('buildCandleChart', () {
+    Candle bar(double o, double h, double l, double c, [int t = 0]) =>
+        Candle(t: t, open: o, high: h, low: l, close: c);
+
+    test('spans every high and low, not just the closes', () {
+      // The closes sit in 10..12, but a wick ran to 20 and another to 5.
+      final chart = buildCandleChart(
+        [bar(10, 20, 9, 11), bar(11, 13, 5, 12)],
+        width: 100,
+        height: 50,
+      )!;
+      expect(chart.min, 5);
+      expect(chart.max, 20);
+    });
+
+    test('centres each candle in its slot so the edges are not clipped', () {
+      final chart = buildCandleChart(
+        [bar(1, 2, 0, 1), bar(1, 2, 0, 1)],
+        width: 100,
+        height: 50,
+      )!;
+      // Two candles, 50px slots, centres at 25 and 75.
+      expect(chart.xs, [25, 75]);
+      expect(chart.bodyWidth, lessThan(50));
+      expect(chart.bodyWidth, greaterThan(0));
+    });
+
+    test('projects highs above lows on the canvas', () {
+      final chart = buildCandleChart(
+        [bar(10, 20, 5, 15)],
+        width: 100,
+        height: 50,
+        padding: 0,
+      )!;
+      // Canvas y grows downward, so the high has the smaller y.
+      expect(chart.yFor(20), lessThan(chart.yFor(5)));
+      expect(chart.yFor(20), 0);
+      expect(chart.yFor(5), 50);
+    });
+
+    test('returns null when there is nothing to draw', () {
+      expect(buildCandleChart(const [], width: 100, height: 50), isNull);
+      expect(buildCandleChart([bar(1, 2, 0, 1)], width: 0, height: 50), isNull);
+    });
+  });
+
+  group('aggregateCandles', () {
+    List<Candle> ramp(int n) => [
+      for (var i = 0; i < n; i++)
+        Candle(
+          t: i,
+          open: i.toDouble(),
+          high: i + 2.0,
+          low: i - 1.0,
+          close: i + 1.0,
+        ),
+    ];
+
+    test('leaves a series that already fits untouched', () {
+      final candles = ramp(5);
+      expect(aggregateCandles(candles, 10), same(candles));
+      expect(aggregateCandles(candles, 5), same(candles));
+    });
+
+    test('merges buckets keeping first open, last close and the extremes', () {
+      // Six bars into three: pairs (0,1), (2,3), (4,5).
+      final merged = aggregateCandles(ramp(6), 3);
+      expect(merged, hasLength(3));
+
+      expect(merged[0].open, 0); // first bar's open
+      expect(merged[0].close, 2); // second bar's close
+      expect(merged[0].high, 3); // max of highs 2 and 3
+      expect(merged[0].low, -1); // min of lows -1 and 0
+      expect(merged[0].t, 0); // bucket starts at the first bar
+
+      expect(merged[2].open, 4);
+      expect(merged[2].close, 6);
+    });
+
+    test('never returns more buckets than asked for', () {
+      // 100 into 7 needs a bucket size of 15, giving 7 buckets.
+      for (final max in [1, 3, 7, 33, 99]) {
+        expect(
+          aggregateCandles(ramp(100), max).length,
+          lessThanOrEqualTo(max),
+          reason: 'max=$max',
+        );
+      }
+    });
+
+    test('preserves the overall open and close across the whole series', () {
+      final original = ramp(50);
+      final merged = aggregateCandles(original, 6);
+      expect(merged.first.open, original.first.open);
+      expect(merged.last.close, original.last.close);
+    });
+
+    test('is empty for a non-positive limit', () {
+      expect(aggregateCandles(ramp(5), 0), isEmpty);
     });
   });
 }

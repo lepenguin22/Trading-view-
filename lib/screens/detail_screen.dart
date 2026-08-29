@@ -23,13 +23,16 @@ class DetailScreen extends StatefulWidget {
 }
 
 class _DetailScreenState extends State<DetailScreen> {
-  final _api = YahooApi();
+  /// Shared with the rest of the app, so this screen neither creates nor
+  /// closes it.
+  late final YahooApi _api = context.read<YahooApi>();
 
   RangeKey _range = RangeKey.d1;
   History? _history;
   bool _loading = true;
   String? _error;
-  int? _scrubIndex;
+  Candle? _scrubbed;
+  ChartStyle _style = ChartStyle.candles;
 
   CancelToken? _inFlight;
 
@@ -42,7 +45,6 @@ class _DetailScreenState extends State<DetailScreen> {
   @override
   void dispose() {
     _inFlight?.cancel();
-    _api.dispose();
     super.dispose();
   }
 
@@ -54,7 +56,7 @@ class _DetailScreenState extends State<DetailScreen> {
     setState(() {
       _loading = true;
       _error = null;
-      _scrubIndex = null;
+      _scrubbed = null;
     });
 
     try {
@@ -91,15 +93,15 @@ class _DetailScreenState extends State<DetailScreen> {
     final history = _history;
     if (history == null) return null;
 
-    final i = _scrubIndex;
-    if (i != null && i < history.points.length) {
-      final point = history.points[i];
-      final change = point.c - history.first;
+    final scrubbed = _scrubbed;
+    if (scrubbed != null) {
+      final change = scrubbed.close - history.first;
       return _Headline(
-        price: point.c,
+        price: scrubbed.close,
         change: change,
         changePercent: history.first != 0 ? (change / history.first) * 100 : 0,
-        caption: formatPointDate(point.t, _range.intraday),
+        caption: formatPointDate(scrubbed.t, _range.intraday),
+        candle: scrubbed,
       );
     }
 
@@ -135,7 +137,7 @@ class _DetailScreenState extends State<DetailScreen> {
       body: SingleChildScrollView(
         // A vertical scroll must not fight the chart's horizontal scrub
         // gesture, so scrolling is suspended while a finger is on the chart.
-        physics: _scrubIndex == null
+        physics: _scrubbed == null
             ? const AlwaysScrollableScrollPhysics()
             : const NeverScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
@@ -181,14 +183,24 @@ class _DetailScreenState extends State<DetailScreen> {
                     ),
             ),
             const SizedBox(height: 6),
-            Text(
-              headline?.caption ?? '',
-              style: TextStyle(color: c.textFaint, fontSize: 13),
+            SizedBox(
+              height: 18,
+              child: headline?.candle != null
+                  ? _OhlcStrip(candle: headline!.candle!, currency: currency)
+                  : Text(
+                      headline?.caption ?? '',
+                      style: TextStyle(color: c.textFaint, fontSize: 13),
+                    ),
             ),
             const SizedBox(height: 12),
             _chartArea(color),
             const SizedBox(height: 14),
-            _rangePicker(color),
+            Row(
+              children: [
+                Expanded(child: _rangePicker(color)),
+                _styleToggle(),
+              ],
+            ),
             if (quote != null) ...[
               const SizedBox(height: 20),
               _Stats(currency: currency, quote: quote),
@@ -250,14 +262,38 @@ class _DetailScreenState extends State<DetailScreen> {
       alignment: Alignment.center,
       children: [
         PriceChart(
-          points: history.points,
+          candles: history.candles,
           color: color,
+          style: _style,
           baseline: history.first,
-          onScrub: (index) => setState(() => _scrubIndex = index),
+          onScrub: (candle) => setState(() => _scrubbed = candle),
         ),
         // Keep the old chart on screen while a new range loads.
         if (_loading) const IgnorePointer(child: CircularProgressIndicator()),
       ],
+    );
+  }
+
+  /// Switches between candlesticks and the close-price line. Candles show the
+  /// detail of each bar; the line is easier to read for the shape of a long
+  /// range.
+  Widget _styleToggle() {
+    final c = context.colors;
+    final next = _style == ChartStyle.candles
+        ? ChartStyle.line
+        : ChartStyle.candles;
+
+    return TextButton.icon(
+      onPressed: () => setState(() {
+        _style = next;
+        _scrubbed = null;
+      }),
+      icon: Icon(next.icon, size: 18),
+      label: Text(next.label),
+      style: TextButton.styleFrom(
+        foregroundColor: c.textMuted,
+        visualDensity: VisualDensity.compact,
+      ),
     );
   }
 
@@ -395,12 +431,16 @@ class _Headline {
     required this.change,
     required this.changePercent,
     required this.caption,
+    this.candle,
   });
 
   final double price;
   final double change;
   final double changePercent;
   final String caption;
+
+  /// The bar under the finger while scrubbing, so its OHLC can be shown.
+  final Candle? candle;
 }
 
 class _Stats extends StatelessWidget {
@@ -521,6 +561,42 @@ class _AlertRow extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Open / high / low / close for the bar under the finger.
+class _OhlcStrip extends StatelessWidget {
+  const _OhlcStrip({required this.candle, required this.currency});
+
+  final Candle candle;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final color = candle.isUp ? c.up : c.down;
+
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        children: [
+          for (final (label, value) in [
+            ('O', candle.open),
+            ('H', candle.high),
+            ('L', candle.low),
+            ('C', candle.close),
+          ]) ...[
+            Text('$label ', style: TextStyle(color: c.textFaint, fontSize: 12)),
+            Text(
+              formatPrice(value, currency),
+              style: tabularFigures.copyWith(color: color, fontSize: 12),
+            ),
+            const SizedBox(width: 10),
+          ],
+        ],
       ),
     );
   }
