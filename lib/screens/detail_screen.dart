@@ -3,10 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../api/yahoo.dart';
+import '../models/alert.dart';
 import '../models/types.dart';
+import '../state/alerts.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/alert_sheet.dart';
 import '../widgets/change_pill.dart';
 import '../widgets/price_chart.dart';
 
@@ -191,6 +194,8 @@ class _DetailScreenState extends State<DetailScreen> {
               _Stats(currency: currency, quote: quote),
             ],
             const SizedBox(height: 20),
+            _alertsSection(currency, headline?.price ?? quote?.price),
+            const SizedBox(height: 20),
             _watchButton(onWatchlist),
           ],
         ),
@@ -296,6 +301,49 @@ class _DetailScreenState extends State<DetailScreen> {
               ),
             ),
           ),
+      ],
+    );
+  }
+
+  Widget _alertsSection(String currency, double? price) {
+    final c = context.colors;
+    final alerts = context.watch<AlertsModel>().forSymbol(widget.symbol);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Price alerts',
+              style: TextStyle(
+                color: c.text,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => AlertSheet.show(
+                context,
+                symbol: widget.symbol,
+                currency: currency,
+                currentPrice: price,
+              ),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add'),
+              style: TextButton.styleFrom(foregroundColor: c.accent),
+            ),
+          ],
+        ),
+        if (alerts.isEmpty)
+          Text(
+            'None yet. Add one to be notified when ${widget.symbol} crosses a '
+            'price you choose.',
+            style: TextStyle(color: c.textMuted, fontSize: 13, height: 1.4),
+          )
+        else
+          for (final alert in alerts) _AlertRow(alert: alert),
       ],
     );
   }
@@ -413,6 +461,66 @@ class _Stats extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _AlertRow extends StatelessWidget {
+  const _AlertRow({required this.alert});
+
+  final PriceAlert alert;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final model = context.read<AlertsModel>();
+    final armed = alert.enabled && !alert.hasTriggered;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: c.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.border),
+        ),
+        padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+        child: Row(
+          children: [
+            Icon(
+              alert.direction == AlertDirection.above
+                  ? Icons.trending_up
+                  : Icons.trending_down,
+              size: 20,
+              color: armed
+                  ? (alert.direction == AlertDirection.above ? c.up : c.down)
+                  : c.textFaint,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                '${alert.direction.phrase} '
+                '${formatPrice(alert.threshold, alert.currency)}'
+                '${alert.hasTriggered ? ' · fired' : ''}',
+                style: TextStyle(
+                  color: armed ? c.text : c.textMuted,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            Switch(
+              value: armed,
+              activeThumbColor: c.accent,
+              onChanged: (v) => model.setEnabled(alert.id, v),
+            ),
+            IconButton(
+              onPressed: () => model.remove(alert.id),
+              icon: Icon(Icons.close, size: 18, color: c.textFaint),
+              tooltip: 'Delete alert',
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../state/alerts.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../widgets/quote_row.dart';
+import 'alerts_screen.dart';
 import 'detail_screen.dart';
 import 'search_screen.dart';
 
@@ -82,8 +84,26 @@ class WatchlistScreen extends StatelessWidget {
     final c = context.colors;
     final model = context.watch<WatchlistModel>();
 
+    final armed = context.watch<AlertsModel>().armedCount;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Watchlist')),
+      appBar: AppBar(
+        title: const Text('Watchlist'),
+        actions: [
+          IconButton(
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const AlertsScreen())),
+            tooltip: armed == 0 ? 'Price alerts' : 'Price alerts, $armed armed',
+            icon: Badge(
+              isLabelVisible: armed > 0,
+              label: Text('$armed'),
+              backgroundColor: c.accent,
+              child: const Icon(Icons.notifications_none),
+            ),
+          ),
+          const SizedBox(width: 4),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openSearch(context),
         backgroundColor: c.accent,
@@ -127,6 +147,9 @@ class WatchlistScreen extends StatelessWidget {
                           symbol: symbol,
                           quote: model.quotes[symbol],
                           error: model.errors[symbol],
+                          hasAlert: context.watch<AlertsModel>().hasArmed(
+                            symbol,
+                          ),
                           onTap: () => Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => DetailScreen(symbol: symbol),

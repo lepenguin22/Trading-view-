@@ -7,7 +7,10 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ticker/api/yahoo.dart';
 import 'package:ticker/main.dart';
+import 'package:ticker/state/alerts.dart';
 import 'package:ticker/state/watchlist.dart';
+
+import 'helpers.dart';
 
 /// A smoke test over the real widget tree: hydration from storage, the polling
 /// timer, navigation and the watchlist rows all run for real, with only the
@@ -17,16 +20,23 @@ void main() {
   final chart1d = File('test/fixtures/chart-1d.json').readAsStringSync();
 
   late int requestCount;
+  late FakeNotifier notifier;
 
   setUp(() {
     requestCount = 0;
+    notifier = FakeNotifier();
     SharedPreferences.setMockInitialValues({});
   });
 
   /// Builds the app over a client that answers every request identically.
+  ///
+  /// Notifications and background scheduling are faked: both would otherwise
+  /// reach for a platform that does not exist under `flutter test`.
   Widget appWith(http.Client client) {
     return TickerApp(
       createModel: () => WatchlistModel(api: YahooApi(client: client)),
+      createAlerts: () =>
+          AlertsModel(notifier: notifier, scheduler: (_) async {}),
     );
   }
 
@@ -132,6 +142,101 @@ void main() {
 
     expect(find.text('Add symbol'), findsOneWidget);
     expect(find.text('Company name or ticker'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('creates a price alert from the detail screen', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // The alerts section sits below the chart and stats, so bring it on
+    // screen before tapping.
+    await tester.ensureVisible(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alert me when AAPL'), findsOneWidget);
+
+    // The field is seeded with the current price; set an explicit threshold.
+    await tester.enterText(find.byType(TextField), '250');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Create alert'));
+    await tester.pumpAndSettle();
+
+    // Sheet closed, and the alert is listed against the symbol.
+    expect(find.text('Alert me when AAPL'), findsNothing);
+    expect(find.textContaining('rises to or above'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('warns when the alert condition is already met', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    // AAPL is at 196.50 in the fixture, so "above 100" already holds.
+    await tester.enterText(find.byType(TextField), '100');
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('already meets this condition'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a new alert reaches the watchlist badge and alerts screen', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '250');
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Create alert'));
+    await tester.pumpAndSettle();
+
+    // Back to the watchlist: the app bar badge now shows one armed alert.
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(Badge, '1'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.notifications_none));
+    await tester.pumpAndSettle();
+    expect(find.text('Alerts'), findsOneWidget);
+    expect(find.textContaining('rises to or above'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a foreground refresh fires a due alert', (tester) async {
+    // Seed an alert AAPL already satisfies, then let the watchlist refresh.
+    SharedPreferences.setMockInitialValues({
+      'ticker.alerts.v1':
+          '[{"id":"due","symbol":"AAPL","direction":"above","threshold":10,'
+          '"currency":"USD","createdAt":1,"enabled":true}]',
+    });
+
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    expect(notifier.fired.map((a) => a.id), ['due']);
+    expect(notifier.prices.single, 196.5);
 
     await teardown(tester);
   });

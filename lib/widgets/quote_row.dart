@@ -18,6 +18,7 @@ class QuoteRow extends StatelessWidget {
     required this.error,
     required this.onTap,
     required this.onLongPress,
+    this.hasAlert = false,
   });
 
   final String symbol;
@@ -28,6 +29,9 @@ class QuoteRow extends StatelessWidget {
 
   final VoidCallback onTap;
   final VoidCallback onLongPress;
+
+  /// Shows a small bell beside the symbol when an armed alert is set on it.
+  final bool hasAlert;
 
   @override
   Widget build(BuildContext context) {
@@ -45,6 +49,7 @@ class QuoteRow extends StatelessWidget {
               '${change >= 0 ? 'up' : 'down'} '
               '${q.changePercent.abs().toStringAsFixed(2)} percent'
               '${stale ? ', last known price' : ''}'
+              '${hasAlert ? ', price alert set' : ''}'
         : '$symbol, ${error ?? 'loading'}';
 
     return Semantics(
@@ -73,16 +78,31 @@ class QuoteRow extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        symbol,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: c.text,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.2,
-                        ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              symbol,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: c.text,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                          ),
+                          if (hasAlert) ...[
+                            const SizedBox(width: 5),
+                            Icon(
+                              Icons.notifications_active,
+                              size: 13,
+                              color: c.textFaint,
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 2),
                       Text(

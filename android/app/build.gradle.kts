@@ -21,10 +21,15 @@ val keystoreProperties = Properties().apply {
 
 android {
     namespace = "io.github.lepenguin22.ticker"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned rather than taking flutter.compileSdkVersion:
+    // flutter_local_notifications requires 35 as a minimum.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications relies on core library desugaring, and
+        // requires it even for apps that only post immediate notifications.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -62,6 +67,10 @@ android {
                 signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 kotlin {
