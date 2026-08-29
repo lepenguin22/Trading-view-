@@ -35,6 +35,34 @@ flutter test        # unit and widget tests
 flutter analyze
 ```
 
+## Building a signed release
+
+The app's identity is `io.github.lepenguin22.ticker` on both platforms.
+
+Debug and profile builds need no setup. A release build signs with the debug
+key unless you supply a keystore, so `flutter run --release` works on a fresh
+clone — but an APK signed that way cannot be published.
+
+To produce a publishable build, generate a keystore once:
+
+```bash
+keytool -genkey -v -keystore ~/upload-keystore.jks \
+  -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+```
+
+Then copy `android/key.properties.example` to `android/key.properties` and fill
+in the passwords, alias and the path to the file. Gradle picks it up
+automatically:
+
+```bash
+flutter build apk        # build/app/outputs/flutter-apk/app-release.apk
+flutter build appbundle  # build/app/outputs/bundle/release/app-release.aab
+```
+
+`key.properties` and any `*.jks` / `*.keystore` file are gitignored. Keep the
+keystore outside the repository and back it up: losing it means you can never
+ship an update to an app already on the Play Store, and there is no recovery.
+
 ## Price data
 
 Prices come from Yahoo Finance's public endpoints:

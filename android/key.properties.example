@@ -1,0 +1,17 @@
+# Copy to android/key.properties and fill in for a signed release build.
+#
+# android/key.properties is gitignored: it holds the passwords to your signing
+# key and must never be committed. Nor must the keystore file itself — keep it
+# outside the repository entirely, and back it up somewhere safe. Losing it
+# means you can never publish an update to an app already on the Play Store.
+#
+# Generate the keystore with:
+#
+#   keytool -genkey -v -keystore ~/upload-keystore.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+
+storePassword=<the password you gave the keystore>
+keyPassword=<the password you gave the key, often the same>
+keyAlias=upload
+# An absolute path is safest. On Windows, escape the separators: C:\\Users\\you\\upload-keystore.jks
+storeFile=/Users/you/upload-keystore.jks
