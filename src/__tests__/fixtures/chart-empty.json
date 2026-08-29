@@ -1,0 +1,20 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "USD",
+          "symbol": "ZZZZ",
+          "exchangeName": "PNK",
+          "regularMarketPrice": 1.23,
+          "previousClose": 1.2,
+          "dataGranularity": "5m",
+          "range": "1d"
+        },
+        "timestamp": [],
+        "indicators": { "quote": [{}] }
+      }
+    ],
+    "error": null
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "explains": [],
+  "count": 6,
+  "quotes": [
+    {
+      "exchange": "NMS",
+      "shortname": "Apple Inc.",
+      "quoteType": "EQUITY",
+      "symbol": "AAPL",
+      "index": "quotes",
+      "score": 1256300,
+      "typeDisp": "Equity",
+      "longname": "Apple Inc.",
+      "exchDisp": "NASDAQ",
+      "sector": "Technology",
+      "isYahooFinance": true
+    },
+    {
+      "exchange": "MEX",
+      "shortname": "Apple Inc.",
+      "quoteType": "EQUITY",
+      "symbol": "AAPL.MX",
+      "typeDisp": "Equity",
+      "exchDisp": "Mexico",
+      "isYahooFinance": true
+    },
+    {
+      "exchange": "NGM",
+      "shortname": "iShares U.S. Technology ETF",
+      "quoteType": "ETF",
+      "symbol": "IYW",
+      "typeDisp": "ETF",
+      "longname": "iShares U.S. Technology ETF",
+      "exchDisp": "NASDAQ",
+      "isYahooFinance": true
+    },
+    {
+      "exchange": "OPR",
+      "shortname": "AAPL Jan 2027 200.000 call",
+      "quoteType": "OPTION",
+      "symbol": "AAPL270115C00200000",
+      "typeDisp": "Option",
+      "exchDisp": "OPR",
+      "isYahooFinance": true
+    },
+    {
+      "index": "78ddc07626ff4bbcae663e88514c23a0",
+      "name": "Apple Hospitality REIT",
+      "permalink": "apple-hospitality-reit",
+      "isYahooFinance": false
+    },
+    {
+      "exchange": "CCC",
+      "shortname": "Bitcoin USD",
+      "quoteType": "CRYPTOCURRENCY",
+      "symbol": "BTC-USD",
+      "typeDisp": "Cryptocurrency",
+      "longname": "Bitcoin USD",
+      "exchDisp": "CCC",
+      "isYahooFinance": true
+    }
+  ],
+  "news": [{ "uuid": "abc", "title": "Apple announces..." }]
+}
