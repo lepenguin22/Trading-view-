@@ -624,46 +624,11 @@ void main() {
 
   const holdingsCsv = 'Ticker,Shares\nAAPL,10\nMSFT,5\nNVDA,2\n';
 
-  testWidgets('the import screen adds resolved symbols and names failures', (
+  testWidgets('an import fills the portfolio and leaves the watchlist alone', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({
       'ticker.watchlist.symbols.v1': '["AAPL"]',
-    });
-
-    late WatchlistModel model;
-    await tester.pumpWidget(
-      TickerApp(
-        createApi: () => YahooApi(client: feedResolving(reject: {'NVDA'})),
-        createAlerts: () =>
-            AlertsModel(notifier: notifier, scheduler: (_) async {}),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    model = Provider.of<WatchlistModel>(
-      tester.element(find.byType(WatchlistScreen)),
-      listen: false,
-    );
-
-    // Drive the model directly: this is the import contract, and it is what
-    // the screen calls.
-    final outcome = await model.importSymbols(['AAPL', 'MSFT', 'NVDA']);
-    await tester.pumpAndSettle();
-
-    // AAPL was already there, MSFT resolves, NVDA is rejected by the feed.
-    expect(outcome.alreadyPresent, ['AAPL']);
-    expect(outcome.added, ['MSFT']);
-    expect(outcome.failed.keys, ['NVDA']);
-    expect(model.symbols, containsAll(['AAPL', 'MSFT']));
-    expect(model.symbols, isNot(contains('NVDA')));
-
-    await teardown(tester);
-  });
-
-  testWidgets('re-importing an unchanged sheet adds nothing', (tester) async {
-    SharedPreferences.setMockInitialValues({
-      'ticker.watchlist.symbols.v1': '["AAPL","MSFT"]',
     });
 
     await tester.pumpWidget(appWith(feedResolving()));
@@ -674,13 +639,109 @@ void main() {
       listen: false,
     );
 
-    final outcome = await model.importSymbols(['AAPL', 'MSFT']);
+    final outcome = await model.importPortfolio(['MSFT', 'NVDA']);
     await tester.pumpAndSettle();
 
-    expect(outcome.added, isEmpty);
-    expect(outcome.alreadyPresent, ['AAPL', 'MSFT']);
-    expect(outcome.failed, isEmpty);
-    expect(model.symbols, ['AAPL', 'MSFT']);
+    expect(outcome.added, ['MSFT', 'NVDA']);
+    expect(model.portfolio, ['MSFT', 'NVDA']);
+    // The watchlist is a separate list and an import must not touch it.
+    expect(model.symbols, ['AAPL']);
+
+    await teardown(tester);
+  });
+
+  testWidgets('re-importing mirrors the sheet, removing what it dropped', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.symbols.v1': '["AAPL","MSFT","NVDA"]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    final model = Provider.of<WatchlistModel>(
+      tester.element(find.byType(WatchlistScreen)),
+      listen: false,
+    );
+    expect(model.portfolio, ['AAPL', 'MSFT', 'NVDA']);
+
+    // The sheet no longer lists NVDA, and now lists TSLA.
+    final outcome = await model.importPortfolio(['AAPL', 'MSFT', 'TSLA']);
+    await tester.pumpAndSettle();
+
+    expect(outcome.added, ['TSLA']);
+    expect(outcome.removed, ['NVDA'], reason: 'sold holdings must drop out');
+    expect(outcome.unchanged, ['AAPL', 'MSFT']);
+    expect(model.portfolio, ['AAPL', 'MSFT', 'TSLA']);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a symbol the feed rejects is kept, not dropped', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(appWith(feedResolving(reject: {'NVDA'})));
+    await tester.pumpAndSettle();
+
+    final model = Provider.of<WatchlistModel>(
+      tester.element(find.byType(WatchlistScreen)),
+      listen: false,
+    );
+
+    final outcome = await model.importPortfolio(['MSFT', 'NVDA']);
+    await tester.pumpAndSettle();
+
+    // The sheet is the authority on what is held; a failed request must not
+    // delete a holding.
+    expect(model.portfolio, ['MSFT', 'NVDA']);
+    expect(outcome.failed.keys, ['NVDA']);
+
+    await teardown(tester);
+  });
+
+  testWidgets('both lists are polled together', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+      'ticker.portfolio.symbols.v1': '["MSFT"]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    final model = Provider.of<WatchlistModel>(
+      tester.element(find.byType(WatchlistScreen)),
+      listen: false,
+    );
+
+    // One quote map covers both lists, so a row on either has a price.
+    expect(model.quotes.keys, containsAll(['AAPL', 'MSFT']));
+
+    await teardown(tester);
+  });
+
+  testWidgets('the tabs show both lists and their counts', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+      'ticker.portfolio.symbols.v1': '["MSFT","NVDA"]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Watchlist (1)'), findsOneWidget);
+    expect(find.text('Portfolio (2)'), findsOneWidget);
+
+    // The watchlist tab is showing, so its symbol is on screen and the
+    // portfolio's are not.
+    expect(find.text('AAPL'), findsOneWidget);
+
+    await tester.tap(find.text('Portfolio (2)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('MSFT'), findsOneWidget);
+    expect(find.text('NVDA'), findsOneWidget);
 
     await teardown(tester);
   });
@@ -727,8 +788,10 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Import'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Added 3'), findsOneWidget);
-    expect(model.symbols, ['AAPL', 'MSFT', 'NVDA']);
+    expect(find.text('Portfolio updated'), findsOneWidget);
+    expect(find.textContaining('Added (3)'), findsOneWidget);
+    expect(model.portfolio, ['AAPL', 'MSFT', 'NVDA']);
+    expect(model.symbols, isEmpty, reason: 'the watchlist is untouched');
 
     model.dispose();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -750,11 +813,11 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Import'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Added 2'), findsOneWidget);
-    expect(find.text('Not added'), findsOneWidget);
+    expect(find.text('Kept, but no price'), findsOneWidget);
     // Named, so the user knows which cell in the sheet to fix.
     expect(find.textContaining('NVDA —'), findsOneWidget);
-    expect(model.symbols, isNot(contains('NVDA')));
+    // Kept: the sheet says it is held, so a failed request must not drop it.
+    expect(model.portfolio, ['AAPL', 'MSFT', 'NVDA']);
 
     model.dispose();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -777,7 +840,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Publish to web'), findsWidgets);
-    expect(model.symbols, isEmpty);
+    // A failed fetch must never empty the portfolio.
+    expect(model.portfolio, isEmpty);
 
     model.dispose();
     await tester.pumpWidget(const SizedBox.shrink());

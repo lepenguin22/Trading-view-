@@ -64,7 +64,7 @@ class _ImportScreenState extends State<ImportScreen> {
       final symbols = await _source.fetchSymbols(url);
       if (!mounted) return;
 
-      final outcome = await context.read<WatchlistModel>().importSymbols(
+      final outcome = await context.read<WatchlistModel>().importPortfolio(
         symbols,
       );
       if (!mounted) return;
@@ -92,9 +92,9 @@ class _ImportScreenState extends State<ImportScreen> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
           Text(
-            'Paste the link to a spreadsheet published as CSV. Every ticker in '
-            'its first holdings table is checked against the price feed and '
-            'added to your watchlist.',
+            'Paste the link to a spreadsheet published as CSV. Your Portfolio '
+            'list is replaced with the holdings in its first table, so it '
+            'mirrors the sheet. Your watchlist is untouched.',
             style: TextStyle(color: c.textMuted, fontSize: 14, height: 1.45),
           ),
           const SizedBox(height: 16),
@@ -190,10 +190,9 @@ class _Result extends StatelessWidget {
           Semantics(
             liveRegion: true,
             child: Text(
-              outcome.added.isEmpty
-                  ? 'Nothing new to add'
-                  : 'Added ${outcome.added.length} '
-                        '${outcome.added.length == 1 ? "symbol" : "symbols"}',
+              outcome.changedNothing
+                  ? 'Portfolio already matches the sheet'
+                  : 'Portfolio updated',
               style: TextStyle(
                 color: c.text,
                 fontSize: 15,
@@ -201,24 +200,31 @@ class _Result extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(height: 6),
+          Text(
+            '${outcome.added.length + outcome.unchanged.length} '
+            '${outcome.added.length + outcome.unchanged.length == 1 ? "holding" : "holdings"}',
+            style: TextStyle(color: c.textMuted, fontSize: 13),
+          ),
           if (outcome.added.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(
-              outcome.added.join(', '),
-              style: TextStyle(color: c.up, fontSize: 13, height: 1.4),
-            ),
-          ],
-          if (outcome.alreadyPresent.isNotEmpty) ...[
             const SizedBox(height: 10),
-            Text(
-              '${outcome.alreadyPresent.length} already on your watchlist',
-              style: TextStyle(color: c.textMuted, fontSize: 13),
+            _Group(label: 'Added', symbols: outcome.added, color: c.up),
+          ],
+          // Called out rather than folded into a count: an import mirrors the
+          // sheet, so a removal the user did not expect is the thing they most
+          // need to notice.
+          if (outcome.removed.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _Group(
+              label: 'Removed — no longer in the sheet',
+              symbols: outcome.removed,
+              color: c.down,
             ),
           ],
           if (outcome.failed.isNotEmpty) ...[
             const SizedBox(height: 12),
             Text(
-              'Not added',
+              'Kept, but no price',
               style: TextStyle(
                 color: c.danger,
                 fontSize: 13,
@@ -226,8 +232,8 @@ class _Result extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            // Named individually rather than counted: these are usually typos
-            // in the sheet, and the user needs to know which cell to fix.
+            // Named individually: these are usually typos in the sheet, and
+            // the user needs to know which cell to fix.
             for (final entry in outcome.failed.entries)
               Padding(
                 padding: const EdgeInsets.only(top: 2),
@@ -243,6 +249,41 @@ class _Result extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+class _Group extends StatelessWidget {
+  const _Group({
+    required this.label,
+    required this.symbols,
+    required this.color,
+  });
+
+  final String label;
+  final List<String> symbols;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '$label (${symbols.length})',
+          style: TextStyle(
+            color: c.textMuted,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          symbols.join(', '),
+          style: TextStyle(color: color, fontSize: 13, height: 1.4),
+        ),
+      ],
     );
   }
 }
@@ -295,7 +336,9 @@ class _Instructions extends StatelessWidget {
         Text(
           'Only the first table with a "Ticker" or "Symbol" column is read, and '
           'it stops at the first blank row — so a table of closed positions '
-          'further down the same tab is left alone.',
+          'further down the same tab is left alone. Importing replaces the '
+          'Portfolio list, so selling something and deleting its row removes '
+          'it here too.',
           style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
         ),
       ],

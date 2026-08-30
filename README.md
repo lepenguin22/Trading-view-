@@ -5,9 +5,10 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
 
 ## What it does
 
-- **Watchlist** — your symbols with live price, absolute and percentage day
-  change, and a sparkline of the session. Pull to refresh; it also re-polls
-  every 60 seconds while the app is on screen.
+- **Two lists, side by side** — a **Watchlist** of symbols you chose to follow,
+  and a **Portfolio** mirrored from your spreadsheet. Both show live price,
+  absolute and percentage day change, and a sparkline of the session. Pull to
+  refresh; both re-poll together every 60 seconds while the app is on screen.
 - **Search** — find a company, fund or index by name or ticker. Covers global
   exchanges (`AAPL`, `VOD.L`, `BMW.DE`, `BTC-USD`, `^FTSE`).
 - **Detail** — a daily candlestick chart you pinch to zoom and drag to pan,
@@ -16,8 +17,8 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
   shape of a long span.
 - **Indicators** — 20, 50 and 100 simple moving averages overlaid on the price,
   each toggleable from the legend, and a 14-period RSI in its own pane.
-- **Import** — pull your holdings in from a spreadsheet published as CSV,
-  rather than typing them one by one.
+- **Import** — fill the Portfolio list from a spreadsheet published as CSV,
+  rather than typing holdings one by one.
 - **Price alerts** — set an alert on any symbol for a price rising to or above,
   or falling to or below, a level you choose. When it fires you get a
   notification, and the alert switches itself off so it does not nag.
@@ -135,7 +136,12 @@ open from a close would draw a candle that never traded.
 
 ## Importing a portfolio
 
-The watchlist can be filled from a spreadsheet. Publish the tab holding your
+The **Portfolio** list is filled from a spreadsheet. It is deliberately
+separate from the watchlist: one is what you chose to follow, the other is what
+your sheet says you own, and an import rewrites the second without touching the
+first. A symbol may sit on both.
+
+The import works like this. Publish the tab holding your
 positions as CSV (in Sheets: **File → Share → Publish to web**, pick the single
 tab, choose CSV), paste the link into the import screen, and every ticker in it
 is checked against the price feed and added. The link is remembered, so
@@ -158,10 +164,21 @@ The parser is built for hand-maintained sheets: the table need not start at row
 (`VOD.L`, `BRK-B`) survive, and cells that are prose, totals or bare numbers
 are dropped rather than sent to the price feed.
 
-**Every ticker is verified before it is added.** A symbol the feed rejects is
-reported by name so the sheet can be corrected, rather than landing as a dead
-row. Symbols already on the watchlist are left alone, so re-importing an
-unchanged sheet is a no-op.
+**An import mirrors the sheet rather than merging into it.** The Portfolio
+becomes exactly what the sheet lists, so selling a holding and deleting its row
+removes it from the app on the next import. Removals are reported by name
+alongside additions, because a removal you did not expect is the thing most
+worth noticing. The replace only happens after the sheet has been fetched and
+parsed successfully, so a network failure can never empty the list.
+
+**A ticker the price feed rejects is kept, not dropped.** The sheet is the
+authority on what is held, and deleting a holding because one request failed
+would be worse than showing it with an error. Those are listed by name so the
+sheet can be corrected.
+
+Removing a holding from the Portfolio inside the app hides it now, but the
+sheet still decides: it returns on the next import unless it is deleted there
+too.
 
 ## How price alerts work
 
