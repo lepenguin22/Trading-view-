@@ -1,0 +1,18 @@
+,,,,,,,,
+,Columns to modify: Column B (Stock ticker symbol)  Column D (avg price bought)  Column E (how many shares bought),,,,,,,
+,,,,,,,,
+No.,Ticker,Name,Average price bought  (US),Shares bought,Principal invested (USD),Current Stock Price,% Gain or Loss,Portfolio Weightage
+1,AAA,Alpha Industries Inc,"100.00",10,"1,000.00",$110.00,10.00%,25.00%
+2,BBB,Beta Technologies Inc,"200.00",5,"1,000.00",$180.00,-10.00%,25.00%
+3,ccc,Gamma Holdings NV,"50.00",20,"1,000.00",$75.00,50.00%,25.00%
+4,DDD.L,Delta Group PLC,"25.00",40,"1,000.00",$25.00,0.00%,12.50%
+5,BRK-B,Epsilon Corp Class B,"10.00",100,"1,000.00",$12.00,20.00%,12.50%
+,,,,,,,,
+,Overview,,,,,,,
+,Total invested (USD),Current balance (USD),Total Gain or Loss ($),Total Gain or Loss (%),,,,
+,"$5,000","$5,600",$600,12.00%,,,,
+,,,,,,,,
+,Stock,P/L,Realised P/L,Dividend,Total,,,
+,ZZZ,-100.00,-50.00,10.00,-140.00,,,
+,YYY,-20.00,,,,,,
+,XXX,-5.00,,,,,,

@@ -16,6 +16,8 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
   shape of a long span.
 - **Indicators** — 20, 50 and 100 simple moving averages overlaid on the price,
   each toggleable from the legend, and a 14-period RSI in its own pane.
+- **Import** — pull your holdings in from a spreadsheet published as CSV,
+  rather than typing them one by one.
 - **Price alerts** — set an alert on any symbol for a price rising to or above,
   or falling to or below, a level you choose. When it fires you get a
   notification, and the alert switches itself off so it does not nag.
@@ -131,6 +133,36 @@ A bar is only drawn when the feed supplies all four of open, high, low and
 close. Yahoo pads its arrays with nulls for halted intervals, and inventing an
 open from a close would draw a candle that never traded.
 
+## Importing a portfolio
+
+The watchlist can be filled from a spreadsheet. Publish the tab holding your
+positions as CSV (in Sheets: **File → Share → Publish to web**, pick the single
+tab, choose CSV), paste the link into the import screen, and every ticker in it
+is checked against the price feed and added. The link is remembered, so
+re-importing later is one tap.
+
+**Publishing makes that tab readable by anyone with the link.** Publish only
+the tab with your positions — not the whole document — and keep tabs holding
+balances or salary out of it. Nothing else is exposed: no account is linked and
+no token is stored, only the URL you paste.
+
+**Only the first holdings table is read.** The parser finds a column headed
+`Ticker` or `Symbol` and stops at the first blank row. Real portfolio sheets
+often carry a second table of *closed* positions further down the same tab —
+frequently headed `Stock` — and importing that would put shares you no longer
+own onto your watchlist. `Stock` is deliberately not treated as a ticker
+header.
+
+The parser is built for hand-maintained sheets: the table need not start at row
+1 or column A, tickers may be lower case, exchange suffixes and class dashes
+(`VOD.L`, `BRK-B`) survive, and cells that are prose, totals or bare numbers
+are dropped rather than sent to the price feed.
+
+**Every ticker is verified before it is added.** A symbol the feed rejects is
+reported by name so the sheet can be corrected, rather than landing as a dead
+row. Symbols already on the watchlist are left alone, so re-importing an
+unchanged sheet is a no-op.
+
 ## How price alerts work
 
 Add one from a symbol's detail screen; manage them all from the bell in the
@@ -225,6 +257,7 @@ lib/models/
   alert.dart             PriceAlert and the pure firing logic (unit tested)
 lib/api/
   parse.dart             Pure parsers for the Yahoo payloads (unit tested)
+  portfolio_source.dart  Fetches a published CSV sheet
   yahoo.dart             HTTP, host fallback, timeouts, error mapping
 lib/state/
   watchlist.dart         Watchlist model: refresh, polling, add/remove/reorder
@@ -235,13 +268,14 @@ lib/background/
   alert_worker.dart      Background entry point, check routine and scheduling
 lib/notifications/
   notifications.dart     Local notification channel, permission and posting
-lib/screens/             Watchlist, Search, Detail, Alerts
+lib/screens/             Watchlist, Search, Detail, Alerts, Import
 lib/widgets/             QuoteRow, PriceChart, RsiPane, Sparkline, ChangePill,
                          AlertSheet
 lib/utils/
   format.dart            Price, change and date formatting
   chart.dart             Line and candle geometry, zoom limits (unit tested)
   indicators.dart        Moving averages and Wilder RSI (unit tested)
+  portfolio_csv.dart     Holdings-table extraction from CSV (unit tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
 test/                    Tests and payload fixtures
 ```

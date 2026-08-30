@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/types.dart';
 
 const _symbolsKey = 'ticker.watchlist.symbols.v1';
+const _sheetUrlKey = 'ticker.portfolio.sheetUrl.v1';
 const _quotesKey = 'ticker.watchlist.quotes.v1';
 
 /// Shown on first launch so the app is not an empty screen.
@@ -39,6 +40,24 @@ class WatchlistStorage {
       await (await _prefs).setString(_symbolsKey, jsonEncode(symbols));
     } catch (_) {
       // Ignore: the in-memory watchlist is still correct for this session.
+    }
+  }
+
+  /// The last portfolio sheet URL, so re-importing is one tap rather than a
+  /// paste. Only the URL is kept — no account is linked and no token stored.
+  Future<String?> loadSheetUrl() async {
+    try {
+      return (await _prefs).getString(_sheetUrlKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> saveSheetUrl(String url) async {
+    try {
+      await (await _prefs).setString(_sheetUrlKey, url);
+    } catch (_) {
+      // Ignore: the import still worked, it just will not be remembered.
     }
   }
 
