@@ -14,6 +14,8 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
   can drag across to read each bar's open, high, low and close, plus previous
   close, day high/low and exchange. A line view is a tap away for reading the
   shape of a long range.
+- **Indicators** — 20, 50 and 100 simple moving averages overlaid on the price,
+  each toggleable from the legend, and a 14-period RSI in its own pane.
 - **Price alerts** — set an alert on any symbol for a price rising to or above,
   or falling to or below, a level you choose. When it fires you get a
   notification, and the alert switches itself off so it does not nag.
@@ -47,6 +49,48 @@ with a wick spanning the high and low. Dragging across the chart puts an
 O/H/L/C readout in the header for the bar under your finger. The toggle beside
 the range buttons switches to a close-price line, which is easier to read for
 the overall shape of a 1Y or 5Y range.
+
+### Indicators
+
+Three simple moving averages (20 / 50 / 100) are drawn over the price, and
+Wilder's RSI (14) sits in a pane below it. Both are computed from the same
+`lib/utils/indicators.dart`, which is pure and unit tested against
+hand-computed values.
+
+**Periods are counted in the range's own bars, not in drawn bars.** A 20 SMA on
+the 1D range is 20 five-minute bars; on 1Y it is 20 daily bars. Indicators are
+computed on the raw series and then sampled at each drawn bar's close, so
+aggregation (below) never changes what a period means — otherwise the same
+"20 SMA" would move when the screen width changed.
+
+**A period with too few bars reads `n/a` rather than disappearing.** The 1D
+range is around 78 five-minute bars, so MA100 cannot warm up there; the legend
+chip stays visible and greyed so it is clear the range is too short rather than
+the line silently missing.
+
+RSI uses Wilder's smoothing — the seed is the mean of the first 14 changes and
+each later bar carries `(previous * 13 + current) / 14` — which is what every
+charting package means by "RSI". A simple average of gains and losses agrees on
+the first value and drifts after it. One deliberate deviation: a dead-flat
+series has no gains *or* losses, and the ratio is undefined; that case reads 50
+(neutral) rather than the 100 the formula would imply, because calling a
+motionless line "maximally overbought" would be misleading.
+
+The RSI pane is separate from the price plot rather than overlaid on a second
+y-axis. RSI is bounded 0–100 and price is not; sharing an axis would invite
+reading crossings that do not exist. Its scale is pinned to 0–100 for the same
+reason — auto-fitting would destroy the only thing RSI is read for, which is
+where it sits against 30 and 70.
+
+**Indicator colours were picked with a validator, not by eye.** The three MA
+lines are checked for lightness, chroma, contrast, and separation on every pair
+under normal, protan, deutan and tritan vision, in both light and dark. One
+caveat worth stating: red/green candlesticks already occupy most of the
+colour-blind-separable space — the existing up/down pair is itself marginal
+under deuteranopia — so no third set of hues can be fully separable from both
+candles *and* each other. The MA lines are therefore distinguished from the
+candles by mark type (a thin line against a filled body) and by the legend
+labelling each one directly, which is why the legend is always present.
 
 **Bars are aggregated to fit the screen.** A phone is a few hundred pixels
 wide, and a 5Y weekly series is around 260 bars — drawn one-per-point that is
@@ -168,10 +212,12 @@ lib/background/
 lib/notifications/
   notifications.dart     Local notification channel, permission and posting
 lib/screens/             Watchlist, Search, Detail, Alerts
-lib/widgets/             QuoteRow, PriceChart, Sparkline, ChangePill, AlertSheet
+lib/widgets/             QuoteRow, PriceChart, RsiPane, Sparkline, ChangePill,
+                         AlertSheet
 lib/utils/
   format.dart            Price, change and date formatting
   chart.dart             Line and candle geometry, aggregation (unit tested)
+  indicators.dart        Moving averages and Wilder RSI (unit tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
 test/                    Tests and payload fixtures
 ```

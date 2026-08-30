@@ -67,6 +67,30 @@ class Candle {
   String toString() => 'Candle($t, o:$open h:$high l:$low c:$close)';
 }
 
+/// Number of raw bars merged into each drawn bar.
+///
+/// Shared by [aggregateCandles] and [sampleBuckets] so an indicator computed
+/// on raw bars lines up with the aggregated candles it is drawn over.
+int bucketSizeFor(int length, int maxCount) {
+  if (maxCount <= 0 || length <= 0 || length <= maxCount) return 1;
+  // Round up so the bucket count never exceeds maxCount.
+  return (length + maxCount - 1) ~/ maxCount;
+}
+
+/// Samples a raw-aligned series at each bucket's final bar.
+///
+/// Indicators are computed on the raw series — a "20 SMA" must mean 20 bars of
+/// the range's own interval, not 20 merged bars, or the line would change
+/// meaning with the width of the screen. Taking each bucket's last value lines
+/// the indicator up with that bucket's close.
+List<T?> sampleBuckets<T>(List<T?> source, int bucketSize) {
+  if (bucketSize <= 1) return source;
+  return [
+    for (var start = 0; start < source.length; start += bucketSize)
+      source[(start + bucketSize).clamp(0, source.length) - 1],
+  ];
+}
+
 /// Aggregates [candles] into at most [maxCount] bars.
 ///
 /// A phone is only a few hundred pixels wide, so a 5Y weekly series drawn one
@@ -78,8 +102,7 @@ List<Candle> aggregateCandles(List<Candle> candles, int maxCount) {
   if (maxCount <= 0) return const [];
   if (candles.length <= maxCount) return candles;
 
-  // Round up so the bucket count never exceeds maxCount.
-  final bucketSize = (candles.length + maxCount - 1) ~/ maxCount;
+  final bucketSize = bucketSizeFor(candles.length, maxCount);
 
   final out = <Candle>[];
   for (var start = 0; start < candles.length; start += bucketSize) {

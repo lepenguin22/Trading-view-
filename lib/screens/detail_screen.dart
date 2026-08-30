@@ -9,9 +9,11 @@ import '../state/alerts.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/indicators.dart';
 import '../widgets/alert_sheet.dart';
 import '../widgets/change_pill.dart';
 import '../widgets/price_chart.dart';
+import '../widgets/rsi_pane.dart';
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({super.key, required this.symbol});
@@ -33,6 +35,16 @@ class _DetailScreenState extends State<DetailScreen> {
   String? _error;
   Candle? _scrubbed;
   ChartStyle _style = ChartStyle.candles;
+
+  /// Indicators for the loaded range, recomputed only when the series changes
+  /// rather than on every layout pass.
+  Map<int, List<double?>> _mas = const {};
+  List<double?> _rsi = const [];
+
+  /// Which moving averages are drawn. All on by default; a period with no
+  /// data for the range is shown greyed rather than hidden, so it is obvious
+  /// the range is too short rather than the line silently missing.
+  final Set<int> _visibleMas = {...maPeriods};
 
   CancelToken? _inFlight;
 
@@ -66,11 +78,23 @@ class _DetailScreenState extends State<DetailScreen> {
         token: token,
       );
       if (token.isCancelled || !mounted) return;
-      setState(() => _history = result);
+      // Computed once per load rather than per layout pass: a 100 SMA over a
+      // few hundred bars is cheap, but the chart relays out on every scrub.
+      final closes = result.closes;
+      setState(() {
+        _history = result;
+        _mas = {
+          for (final period in maPeriods)
+            period: simpleMovingAverage(closes, period),
+        };
+        _rsi = relativeStrengthIndex(closes, rsiPeriod);
+      });
     } catch (err) {
       if (token.isCancelled || !mounted) return;
       setState(() {
         _history = null;
+        _mas = const {};
+        _rsi = const [];
         _error = describeError(err);
       });
     } finally {
@@ -201,6 +225,12 @@ class _DetailScreenState extends State<DetailScreen> {
                 _styleToggle(),
               ],
             ),
+            if (_history != null) ...[
+              const SizedBox(height: 6),
+              _maLegend(),
+              const SizedBox(height: 14),
+              RsiPane(values: _rsi, aggregate: _style == ChartStyle.candles),
+            ],
             if (quote != null) ...[
               const SizedBox(height: 20),
               _Stats(currency: currency, quote: quote),
@@ -265,6 +295,16 @@ class _DetailScreenState extends State<DetailScreen> {
           candles: history.candles,
           color: color,
           style: _style,
+          overlays: [
+            for (var i = 0; i < maPeriods.length; i++)
+              if (_visibleMas.contains(maPeriods[i]) &&
+                  _mas[maPeriods[i]] != null)
+                MaOverlay(
+                  period: maPeriods[i],
+                  color: context.colors.ma[i],
+                  values: _mas[maPeriods[i]]!,
+                ),
+          ],
           baseline: history.first,
           onScrub: (candle) => setState(() => _scrubbed = candle),
         ),
@@ -380,6 +420,85 @@ class _DetailScreenState extends State<DetailScreen> {
           )
         else
           for (final alert in alerts) _AlertRow(alert: alert),
+      ],
+    );
+  }
+
+  /// Legend for the moving averages. Always present — three lines of the same
+  /// mark type must not be identified by colour alone — and each chip toggles
+  /// its line.
+  Widget _maLegend() {
+    final c = context.colors;
+    final currency = _history?.currency ?? 'USD';
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
+      children: [
+        for (var i = 0; i < maPeriods.length; i++)
+          Builder(
+            builder: (context) {
+              final period = maPeriods[i];
+              final series = _mas[period];
+              final latest = series?.lastWhere(
+                (v) => v != null,
+                orElse: () => null,
+              );
+              // No value at all means the range holds fewer bars than the
+              // period; the chip stays visible but reads as unavailable.
+              final available = latest != null;
+              final shown = _visibleMas.contains(period) && available;
+
+              return InkWell(
+                onTap: available
+                    ? () => setState(() {
+                        if (!_visibleMas.remove(period)) {
+                          _visibleMas.add(period);
+                        }
+                      })
+                    : null,
+                borderRadius: BorderRadius.circular(7),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 2.5,
+                        decoration: BoxDecoration(
+                          color: shown ? c.ma[i] : c.textFaint,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      // Identity is the swatch; the text stays in ink so a
+                      // value never has to be read off a coloured label.
+                      Text(
+                        'MA$period',
+                        style: TextStyle(
+                          color: shown ? c.textMuted : c.textFaint,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        available ? formatPrice(latest, currency) : 'n/a',
+                        style: tabularFigures.copyWith(
+                          color: shown ? c.text : c.textFaint,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
       ],
     );
   }

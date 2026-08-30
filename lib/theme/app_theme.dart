@@ -17,6 +17,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.flat,
     required this.accent,
     required this.danger,
+    required this.ma,
   });
 
   final Color bg;
@@ -31,6 +32,16 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color flat;
   final Color accent;
   final Color danger;
+
+  /// Moving-average line colours, in the order of [maPeriods].
+  ///
+  /// Chosen with the dataviz palette validator rather than by eye: the three
+  /// separate from each other on every pair, in both modes, for normal and
+  /// colour-blind vision. They sit on top of the red/green candles, which
+  /// already occupy most of the separable space — the remaining overlap is
+  /// carried by mark type (a 2px line against a filled body) and by the
+  /// legend labelling each line directly.
+  final List<Color> ma;
 
   /// Colour for a change value: green up, red down, muted when unchanged.
   Color trend(double change) {
@@ -51,6 +62,7 @@ class AppColors extends ThemeExtension<AppColors> {
     flat: Color(0xFF5C6672),
     accent: Color(0xFF1A73E8),
     danger: Color(0xFFD93025),
+    ma: [Color(0xFF2A78D6), Color(0xFFC4437A), Color(0xFFB26A00)],
   );
 
   static const dark = AppColors(
@@ -66,6 +78,7 @@ class AppColors extends ThemeExtension<AppColors> {
     flat: Color(0xFF98A3B0),
     accent: Color(0xFF5B9DF9),
     danger: Color(0xFFF05252),
+    ma: [Color(0xFF3987E5), Color(0xFFD55181), Color(0xFFC98500)],
   );
 
   @override
@@ -82,6 +95,7 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? flat,
     Color? accent,
     Color? danger,
+    List<Color>? ma,
   }) {
     return AppColors(
       bg: bg ?? this.bg,
@@ -96,6 +110,7 @@ class AppColors extends ThemeExtension<AppColors> {
       flat: flat ?? this.flat,
       accent: accent ?? this.accent,
       danger: danger ?? this.danger,
+      ma: ma ?? this.ma,
     );
   }
 
@@ -115,6 +130,9 @@ class AppColors extends ThemeExtension<AppColors> {
       flat: Color.lerp(flat, other.flat, t)!,
       accent: Color.lerp(accent, other.accent, t)!,
       danger: Color.lerp(danger, other.danger, t)!,
+      ma: [
+        for (var i = 0; i < ma.length; i++) Color.lerp(ma[i], other.ma[i], t)!,
+      ],
     );
   }
 }

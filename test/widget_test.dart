@@ -299,4 +299,100 @@ void main() {
 
     await teardown(tester);
   });
+
+  /// A chart payload with [count] bars, so the longer indicators can warm up.
+  /// The fixture only carries four.
+  String syntheticChart(int count) {
+    final t = <int>[];
+    final o = <String>[];
+    final h = <String>[];
+    final l = <String>[];
+    final c = <String>[];
+    for (var i = 0; i < count; i++) {
+      final base = 100 + (i % 11) - 5 + i * 0.1;
+      t.add(1700000000 + i * 300);
+      o.add(base.toStringAsFixed(4));
+      h.add((base + 1).toStringAsFixed(4));
+      l.add((base - 1).toStringAsFixed(4));
+      c.add((base + 0.5).toStringAsFixed(4));
+    }
+    return '{"chart":{"result":[{"meta":{"currency":"USD","symbol":"AAPL",'
+        '"regularMarketPrice":100,"previousClose":99,"longName":"Apple Inc.",'
+        '"marketState":"REGULAR"},"timestamp":[${t.join(",")}],'
+        '"indicators":{"quote":[{"open":[${o.join(",")}],'
+        '"high":[${h.join(",")}],"low":[${l.join(",")}],'
+        '"close":[${c.join(",")}]}]}}],"error":null}}';
+  }
+
+  testWidgets('shows moving averages and RSI once enough bars exist', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(150))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // The legend is always present, so three same-shaped lines are never
+    // identified by colour alone.
+    for (final label in ['MA20', 'MA50', 'MA100']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    // With 150 bars every period has warmed up, so none read n/a.
+    expect(find.text('n/a'), findsNothing);
+
+    expect(find.text('RSI (14)'), findsOneWidget);
+    // The RSI readout is a number, not the em dash placeholder.
+    final rsiRow = find.ancestor(
+      of: find.text('RSI (14)'),
+      matching: find.byType(Row),
+    );
+    expect(
+      find.descendant(of: rsiRow.first, matching: find.text('—')),
+      findsNothing,
+    );
+
+    await teardown(tester);
+  });
+
+  testWidgets('marks a moving average unavailable on too short a range', (
+    tester,
+  ) async {
+    // The fixture has four bars, so no period can warm up.
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // Shown but flagged, rather than silently absent.
+    expect(find.text('MA20'), findsOneWidget);
+    expect(find.text('n/a'), findsNWidgets(3));
+
+    await teardown(tester);
+  });
+
+  testWidgets('tapping a legend chip toggles that average off', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(150))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    PriceChart chartWidget() =>
+        tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(chartWidget().overlays, hasLength(3));
+
+    await tester.tap(find.text('MA50'));
+    await tester.pumpAndSettle();
+
+    final periods = chartWidget().overlays.map((o) => o.period);
+    expect(periods, [20, 100]);
+
+    await tester.tap(find.text('MA50'));
+    await tester.pumpAndSettle();
+    expect(chartWidget().overlays, hasLength(3));
+
+    await teardown(tester);
+  });
 }

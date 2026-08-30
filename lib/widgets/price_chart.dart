@@ -18,6 +18,22 @@ enum ChartStyle {
   final IconData icon;
 }
 
+/// One moving-average line drawn over the price series.
+class MaOverlay {
+  const MaOverlay({
+    required this.period,
+    required this.color,
+    required this.values,
+  });
+
+  final int period;
+  final Color color;
+
+  /// Aligned to the raw candles the chart was given, with null before the
+  /// average has warmed up. Sampled to the drawn bars alongside them.
+  final List<double?> values;
+}
+
 /// The detail screen chart. Candlesticks by default, with a line alternative
 /// for reading the overall shape of a long range.
 ///
@@ -29,6 +45,7 @@ class PriceChart extends StatefulWidget {
     required this.candles,
     required this.color,
     this.style = ChartStyle.candles,
+    this.overlays = const [],
     this.height = _defaultHeight,
     this.baseline,
     this.onScrub,
@@ -39,6 +56,10 @@ class PriceChart extends StatefulWidget {
   /// Trend colour, used for the line view and the baseline-relative tinting.
   final Color color;
   final ChartStyle style;
+
+  /// Moving averages drawn on top of the price series.
+  final List<MaOverlay> overlays;
+
   final double height;
 
   /// Price level the range's change is measured from, drawn as a dashed rule.
@@ -99,9 +120,22 @@ class _PriceChartState extends State<PriceChart> {
 
             // Thin the series to what actually fits before drawing, so a long
             // range shows readable bars instead of a solid block.
-            _drawn = widget.style == ChartStyle.candles
+            final bucketSize = widget.style == ChartStyle.candles
+                ? bucketSizeFor(widget.candles.length, maxCandlesFor(width))
+                : 1;
+            _drawn = bucketSize > 1
                 ? aggregateCandles(widget.candles, maxCandlesFor(width))
                 : widget.candles;
+
+            // Indicators are computed on the raw bars, so they are sampled
+            // with the same buckets rather than recomputed on merged ones.
+            final overlays = [
+              for (final overlay in widget.overlays)
+                (
+                  color: overlay.color,
+                  values: sampleBuckets(overlay.values, bucketSize),
+                ),
+            ];
 
             final CustomPainter painter;
             if (widget.style == ChartStyle.candles) {
@@ -115,6 +149,7 @@ class _PriceChartState extends State<PriceChart> {
               painter = _CandlePainter(
                 geometry: geometry,
                 candles: _drawn,
+                overlays: overlays,
                 up: c.up,
                 down: c.down,
                 ruleColor: c.textFaint,
@@ -131,6 +166,7 @@ class _PriceChartState extends State<PriceChart> {
               _xs = geometry?.xs ?? const [];
               painter = _LinePainter(
                 geometry: geometry,
+                overlays: overlays,
                 color: widget.color,
                 fillColor: widget.color.withValues(alpha: 0.10),
                 ruleColor: c.textFaint,
@@ -164,6 +200,44 @@ class _PriceChartState extends State<PriceChart> {
   }
 }
 
+/// A sampled overlay ready to draw: one colour, one value per drawn bar.
+typedef _Overlay = ({Color color, List<double?> values});
+
+/// Draws each moving average, breaking the line across bars where the average
+/// has not warmed up rather than joining across the gap.
+void _drawOverlays(
+  Canvas canvas,
+  List<_Overlay> overlays,
+  List<double> xs,
+  double Function(double) yFor,
+) {
+  for (final overlay in overlays) {
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6
+      ..strokeJoin = StrokeJoin.round
+      ..strokeCap = StrokeCap.round
+      ..color = overlay.color;
+
+    Path? path;
+    for (var i = 0; i < xs.length && i < overlay.values.length; i++) {
+      final value = overlay.values[i];
+      if (value == null) {
+        if (path != null) canvas.drawPath(path, paint);
+        path = null;
+        continue;
+      }
+      final point = Offset(xs[i], yFor(value));
+      if (path == null) {
+        path = Path()..moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    if (path != null) canvas.drawPath(path, paint);
+  }
+}
+
 /// Draws the dashed baseline rule shared by both chart forms.
 void _drawBaseline(Canvas canvas, double y, double width, Color color) {
   final paint = Paint()
@@ -184,6 +258,7 @@ class _CandlePainter extends CustomPainter {
   const _CandlePainter({
     required this.geometry,
     required this.candles,
+    required this.overlays,
     required this.up,
     required this.down,
     required this.ruleColor,
@@ -193,6 +268,7 @@ class _CandlePainter extends CustomPainter {
 
   final CandleGeometry? geometry;
   final List<Candle> candles;
+  final List<_Overlay> overlays;
   final Color up;
   final Color down;
   final Color ruleColor;
@@ -245,6 +321,8 @@ class _CandlePainter extends CustomPainter {
       );
     }
 
+    _drawOverlays(canvas, overlays, geometry.xs, geometry.yFor);
+
     final i = scrubIndex;
     if (i != null && i < geometry.xs.length) {
       canvas.drawLine(
@@ -259,6 +337,7 @@ class _CandlePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CandlePainter old) =>
+      old.overlays != overlays ||
       old.candles != candles ||
       old.geometry != geometry ||
       old.baseline != baseline ||
@@ -270,6 +349,7 @@ class _CandlePainter extends CustomPainter {
 class _LinePainter extends CustomPainter {
   const _LinePainter({
     required this.geometry,
+    required this.overlays,
     required this.color,
     required this.fillColor,
     required this.ruleColor,
@@ -279,6 +359,7 @@ class _LinePainter extends CustomPainter {
   });
 
   final ChartGeometry? geometry;
+  final List<_Overlay> overlays;
   final Color color;
   final Color fillColor;
   final Color ruleColor;
@@ -319,6 +400,8 @@ class _LinePainter extends CustomPainter {
         ..color = color,
     );
 
+    _drawOverlays(canvas, overlays, chart.xs, chart.yFor);
+
     final i = scrubIndex;
     if (i != null && i < chart.xs.length) {
       canvas.drawLine(
@@ -343,6 +426,7 @@ class _LinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LinePainter old) =>
+      old.overlays != overlays ||
       old.geometry != geometry ||
       old.color != color ||
       old.baseline != baseline ||
