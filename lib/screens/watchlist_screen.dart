@@ -8,6 +8,7 @@ import '../utils/format.dart';
 import '../widgets/quote_row.dart';
 import 'alerts_screen.dart';
 import 'detail_screen.dart';
+import 'import_screen.dart';
 import 'search_screen.dart';
 
 class WatchlistScreen extends StatelessWidget {
@@ -100,6 +101,12 @@ class WatchlistScreen extends StatelessWidget {
               backgroundColor: c.accent,
               child: const Icon(Icons.notifications_none),
             ),
+          ),
+          IconButton(
+            onPressed: () => Navigator.of(context)
+                .push(MaterialPageRoute(builder: (_) => const ImportScreen())),
+            tooltip: 'Import portfolio from a spreadsheet',
+            icon: const Icon(Icons.upload_file_outlined),
           ),
           const SizedBox(width: 4),
         ],

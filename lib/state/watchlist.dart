@@ -7,6 +7,24 @@ import '../models/types.dart';
 import '../utils/format.dart';
 import 'storage.dart';
 
+/// What a portfolio import did, so the screen can report it precisely rather
+/// than claiming success over a partial result.
+class ImportOutcome {
+  const ImportOutcome({
+    required this.added,
+    required this.alreadyPresent,
+    required this.failed,
+  });
+
+  final List<String> added;
+  final List<String> alreadyPresent;
+
+  /// Symbol to the reason the feed rejected it.
+  final Map<String, String> failed;
+
+  bool get isEmpty => added.isEmpty && alreadyPresent.isEmpty && failed.isEmpty;
+}
+
 /// How often the watchlist re-polls while the app is in the foreground.
 const _refreshInterval = Duration(seconds: 60);
 
@@ -184,6 +202,74 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     } catch (err) {
       return describeError(err);
     }
+  }
+
+  /// Adds many symbols at once, verifying each against the feed first.
+  ///
+  /// Every symbol is looked up before anything is committed, so a typo in a
+  /// spreadsheet becomes a reported failure rather than a dead row on the
+  /// watchlist. Symbols already on the list are left alone rather than
+  /// counted as failures — re-importing an unchanged sheet is a no-op.
+  Future<ImportOutcome> importSymbols(List<String> symbols) async {
+    final wanted = <String>[];
+    final alreadyPresent = <String>[];
+    for (final raw in symbols) {
+      final symbol = normaliseSymbol(raw);
+      if (symbol.isEmpty) continue;
+      if (_symbols.contains(symbol)) {
+        alreadyPresent.add(symbol);
+      } else if (!wanted.contains(symbol)) {
+        wanted.add(symbol);
+      }
+    }
+
+    if (wanted.isEmpty) {
+      return ImportOutcome(
+        added: const [],
+        alreadyPresent: alreadyPresent,
+        failed: const {},
+      );
+    }
+
+    // One fan-out rather than a fetch per symbol, the same path the watchlist
+    // refresh uses, so an import of twenty tickers is one burst instead of
+    // twenty sequential round trips.
+    final batch = await _api.fetchQuotes(wanted);
+    if (_disposed) {
+      return ImportOutcome(
+        added: const [],
+        alreadyPresent: alreadyPresent,
+        failed: const {},
+      );
+    }
+
+    final resolved = [for (final q in batch.quotes) q.symbol];
+    if (resolved.isNotEmpty) {
+      final next = Map.of(_quotes);
+      for (final q in batch.quotes) {
+        next[q.symbol] = q;
+      }
+      _quotes = next;
+      _lastUpdated = DateTime.now().millisecondsSinceEpoch;
+      unawaited(_storage.saveCachedQuotes(next));
+      // Keep the sheet's order, which is usually the user's own ordering.
+      _persist([
+        ..._symbols,
+        ...[
+          for (final s in wanted)
+            if (resolved.contains(s)) s,
+        ],
+      ]);
+    }
+
+    return ImportOutcome(
+      added: [
+        for (final s in wanted)
+          if (resolved.contains(s)) s,
+      ],
+      alreadyPresent: alreadyPresent,
+      failed: batch.errors,
+    );
   }
 
   void removeSymbol(String symbol) {

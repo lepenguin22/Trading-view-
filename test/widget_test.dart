@@ -2,12 +2,18 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ticker/api/yahoo.dart';
 import 'package:ticker/main.dart';
+import 'package:ticker/api/portfolio_source.dart';
+import 'package:ticker/screens/import_screen.dart';
+import 'package:ticker/screens/watchlist_screen.dart';
 import 'package:ticker/state/alerts.dart';
+import 'package:ticker/state/watchlist.dart';
+import 'package:ticker/theme/app_theme.dart';
 import 'package:ticker/models/types.dart';
 import 'package:ticker/widgets/price_chart.dart';
 import 'package:ticker/widgets/rsi_pane.dart';
@@ -577,5 +583,204 @@ void main() {
     expect(rsi.window, chart.window);
 
     await teardown(tester);
+  });
+
+  /// A chart payload naming [symbol], so a fake feed can resolve any ticker
+  /// an import asks for while still rejecting the ones a test wants to fail.
+  String quoteFor(String symbol) =>
+      '{"chart":{"result":[{"meta":{"currency":"USD","symbol":"$symbol",'
+      '"regularMarketPrice":100,"previousClose":99,"longName":"$symbol Inc",'
+      '"marketState":"REGULAR"},"timestamp":[1700000000],'
+      '"indicators":{"quote":[{"open":[99],"high":[101],"low":[98],'
+      '"close":[100]}]}}],"error":null}}';
+
+  /// Answers quote requests by echoing the symbol, except those in [reject].
+  MockClient feedResolving({Set<String> reject = const {}}) {
+    return MockClient((request) async {
+      requestCount++;
+      final path = Uri.decodeComponent(request.url.path);
+      final symbol = path.split('/').last;
+      if (reject.contains(symbol)) {
+        return http.Response(
+          '',
+          404,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      }
+      return http.Response(
+        quoteFor(symbol),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      );
+    });
+  }
+
+  PortfolioSource sheetReturning(String body) => PortfolioSource(
+    client: MockClient(
+      (_) async =>
+          http.Response(body, 200, headers: {'content-type': 'text/csv'}),
+    ),
+  );
+
+  const holdingsCsv = 'Ticker,Shares\nAAPL,10\nMSFT,5\nNVDA,2\n';
+
+  testWidgets('the import screen adds resolved symbols and names failures', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+    });
+
+    late WatchlistModel model;
+    await tester.pumpWidget(
+      TickerApp(
+        createApi: () => YahooApi(client: feedResolving(reject: {'NVDA'})),
+        createAlerts: () =>
+            AlertsModel(notifier: notifier, scheduler: (_) async {}),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    model = Provider.of<WatchlistModel>(
+      tester.element(find.byType(WatchlistScreen)),
+      listen: false,
+    );
+
+    // Drive the model directly: this is the import contract, and it is what
+    // the screen calls.
+    final outcome = await model.importSymbols(['AAPL', 'MSFT', 'NVDA']);
+    await tester.pumpAndSettle();
+
+    // AAPL was already there, MSFT resolves, NVDA is rejected by the feed.
+    expect(outcome.alreadyPresent, ['AAPL']);
+    expect(outcome.added, ['MSFT']);
+    expect(outcome.failed.keys, ['NVDA']);
+    expect(model.symbols, containsAll(['AAPL', 'MSFT']));
+    expect(model.symbols, isNot(contains('NVDA')));
+
+    await teardown(tester);
+  });
+
+  testWidgets('re-importing an unchanged sheet adds nothing', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL","MSFT"]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    final model = Provider.of<WatchlistModel>(
+      tester.element(find.byType(WatchlistScreen)),
+      listen: false,
+    );
+
+    final outcome = await model.importSymbols(['AAPL', 'MSFT']);
+    await tester.pumpAndSettle();
+
+    expect(outcome.added, isEmpty);
+    expect(outcome.alreadyPresent, ['AAPL', 'MSFT']);
+    expect(outcome.failed, isEmpty);
+    expect(model.symbols, ['AAPL', 'MSFT']);
+
+    await teardown(tester);
+  });
+
+  /// Pumps the import screen over a model built for the test.
+  ///
+  /// The model is created directly rather than lifted out of a TickerApp tree:
+  /// swapping trees disposes the old model, and a disposed model refuses the
+  /// import.
+  Future<WatchlistModel> pumpImportScreen(
+    WidgetTester tester, {
+    required http.Client feed,
+    required PortfolioSource source,
+  }) async {
+    final model = WatchlistModel(api: YahooApi(client: feed));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: lightTheme,
+        home: ChangeNotifierProvider<WatchlistModel>.value(
+          value: model,
+          child: ImportScreen(source: source),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    return model;
+  }
+
+  testWidgets('the import screen reports what a sheet fetch produced', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    final model = await pumpImportScreen(
+      tester,
+      feed: feedResolving(),
+      source: sheetReturning(holdingsCsv),
+    );
+
+    await tester.enterText(
+      find.byType(TextField),
+      'https://docs.google.com/spreadsheets/d/e/x/pub?output=csv',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Added 3'), findsOneWidget);
+    expect(model.symbols, ['AAPL', 'MSFT', 'NVDA']);
+
+    model.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('a failing ticker is named rather than silently dropped', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    final model = await pumpImportScreen(
+      tester,
+      feed: feedResolving(reject: {'NVDA'}),
+      source: sheetReturning(holdingsCsv),
+    );
+
+    await tester.enterText(find.byType(TextField), 'https://example.com/x.csv');
+    await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Added 2'), findsOneWidget);
+    expect(find.text('Not added'), findsOneWidget);
+    // Named, so the user knows which cell in the sheet to fix.
+    expect(find.textContaining('NVDA —'), findsOneWidget);
+    expect(model.symbols, isNot(contains('NVDA')));
+
+    model.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('the import screen surfaces an unpublished sheet clearly', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    final model = await pumpImportScreen(
+      tester,
+      feed: feedResolving(),
+      source: sheetReturning('<!doctype html><html>Sign in</html>'),
+    );
+
+    await tester.enterText(find.byType(TextField), 'https://example.com/x.csv');
+    await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Publish to web'), findsWidgets);
+    expect(model.symbols, isEmpty);
+
+    model.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
   });
 }
