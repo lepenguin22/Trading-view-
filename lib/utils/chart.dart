@@ -123,20 +123,19 @@ ChartGeometry? buildChart(
   return chart;
 }
 
-/// Smallest candle body that still reads as a candle rather than a smear.
-const minBodyWidth = 3.0;
+/// Narrowest slot a candle may occupy when fully zoomed out. Below roughly
+/// this, bars stop being separable and the chart becomes a smear, so it is the
+/// limit on how far out the zoom goes rather than a signal to merge bars —
+/// one candle is always one day.
+const minCandleSlot = 1.6;
 
 /// Gap between candles, as a fraction of the slot each one occupies.
 const _candleGapRatio = 0.25;
 
-/// How many candles fit legibly across [width].
-///
-/// Callers aggregate their series down to this before building the geometry,
-/// so a 5Y weekly series becomes readable bars rather than a solid block.
+/// Most bars that fit legibly across [width]; the zoom-out limit.
 int maxCandlesFor(double width) {
   if (width <= 0) return 0;
-  final slot = minBodyWidth / (1 - _candleGapRatio);
-  return (width / slot).floor().clamp(1, 1 << 30);
+  return (width / minCandleSlot).floor().clamp(1, 1 << 30);
 }
 
 /// Projects [candles] onto a viewport of [width] x [height].

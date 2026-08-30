@@ -10,10 +10,12 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
   every 60 seconds while the app is on screen.
 - **Search** — find a company, fund or index by name or ticker. Covers global
   exchanges (`AAPL`, `VOD.L`, `BMW.DE`, `BTC-USD`, `^FTSE`).
-- **Detail** — a candlestick chart over 1D / 1W / 1M / 3M / 1Y / 5Y that you
-  can drag across to read each bar's open, high, low and close, plus previous
+- **Detail** — a daily candlestick chart you pinch to zoom and drag to pan,
+  with a long press to read a bar's open, high, low and close. Plus previous
   close, day high/low and exchange. A line view is a tap away for reading the
-  shape of a long range.
+  shape of a long span.
+- **Indicators** — 20, 50 and 100 simple moving averages overlaid on the price,
+  each toggleable from the legend, and a 14-period RSI in its own pane.
 - **Price alerts** — set an alert on any symbol for a price rising to or above,
   or falling to or below, a level you choose. When it fires you get a
   notification, and the alert switches itself off so it does not nag.
@@ -41,23 +43,73 @@ flutter analyze
 
 ## Charts
 
-The detail screen draws candlesticks by default: a body from open to close,
-green when the bar closed at or above its open and red when it closed below,
-with a wick spanning the high and low. Dragging across the chart puts an
-O/H/L/C readout in the header for the bar under your finger. The toggle beside
-the range buttons switches to a close-price line, which is easier to read for
-the overall shape of a 1Y or 5Y range.
+**One candle is always one trading day.** There is no timeframe picker: the
+chart fetches five years of daily bars in a single request and you choose what
+to look at by zooming, the way a desktop charting tool works. Zooming changes
+how many days are on screen; it never changes what a bar means.
 
-**Bars are aggregated to fit the screen.** A phone is a few hundred pixels
-wide, and a 5Y weekly series is around 260 bars — drawn one-per-point that is
-an unreadable smear. Adjacent bars are merged until they fit, which is the same
-operation as moving to a coarser timeframe: the merged bar opens where the
-first opened, closes where the last closed, and spans the extremes between. So
-a 5Y chart shows something closer to monthly bars than weekly ones. The
-aggregation is pure and unit tested.
+- **Pinch** to zoom, anchored on the point between your fingers.
+- **Drag** to pan through history.
+- **Long press and drag** for the crosshair and the O/H/L/C readout — a plain
+  drag pans, so scrubbing sits behind a long press.
+- Zoom buttons sit beside the chart too. A pinch is fiddly for fine
+  adjustment, and the buttons are reachable by keyboard and screen reader.
 
-The watchlist sparklines stay simple lines — candles at 56x28 pixels would be
-noise, not information.
+The header reports the move across the **visible window**, so zooming changes
+what the percentage is measured over, and the caption names the span and its
+dates.
+
+**How far out you can zoom is limited by legibility, not by merging bars.**
+Since a bar is always a day, the chart refuses to shrink candles below about
+1.6 pixels of slot — roughly 200–450 days on a phone, depending on width. To
+see further back you pan rather than zoom out. Zooming in stops at 12 bars, so
+a single candle can never fill the screen.
+
+**The detail chart no longer shows intraday.** Daily bars are the whole point
+of the current design, so today's tick-by-tick action is not on this screen;
+the watchlist sparkline still carries the intraday session.
+
+### Indicators
+
+Three simple moving averages (20 / 50 / 100) are drawn over the price, and
+Wilder's RSI (14) sits in a pane below it. Both are computed from the same
+`lib/utils/indicators.dart`, which is pure and unit tested against
+hand-computed values.
+
+**Periods are days.** MA20 is twenty trading days, RSI(14) is fourteen — the
+conventional reading, and the same regardless of zoom. Indicators are computed
+over the whole fetched series and then sliced to the visible window, not
+recomputed on the slice, so a 20 SMA is still correct at the left edge of the
+view: it uses the twenty days before it, which are off screen but not missing.
+
+**A period with too few bars reads `n/a` rather than disappearing.** A newly
+listed symbol with under 100 days of history cannot support MA100; the legend
+chip stays visible and greyed so it is clear the data is short rather than the
+line silently missing.
+
+RSI uses Wilder's smoothing — the seed is the mean of the first 14 changes and
+each later bar carries `(previous * 13 + current) / 14` — which is what every
+charting package means by "RSI". A simple average of gains and losses agrees on
+the first value and drifts after it. One deliberate deviation: a dead-flat
+series has no gains *or* losses, and the ratio is undefined; that case reads 50
+(neutral) rather than the 100 the formula would imply, because calling a
+motionless line "maximally overbought" would be misleading.
+
+The RSI pane is separate from the price plot rather than overlaid on a second
+y-axis. RSI is bounded 0–100 and price is not; sharing an axis would invite
+reading crossings that do not exist. Its scale is pinned to 0–100 for the same
+reason — auto-fitting would destroy the only thing RSI is read for, which is
+where it sits against 30 and 70.
+
+**Indicator colours were picked with a validator, not by eye.** The three MA
+lines are checked for lightness, chroma, contrast, and separation on every pair
+under normal, protan, deutan and tritan vision, in both light and dark. One
+caveat worth stating: red/green candlesticks already occupy most of the
+colour-blind-separable space — the existing up/down pair is itself marginal
+under deuteranopia — so no third set of hues can be fully separable from both
+candles *and* each other. The MA lines are therefore distinguished from the
+candles by mark type (a thin line against a filled body) and by the legend
+labelling each one directly, which is why the legend is always present.
 
 A bar is only drawn when the feed supplies all four of open, high, low and
 close. Yahoo pads its arrays with nulls for halted intervals, and inventing an
@@ -128,7 +180,7 @@ Prices come from Yahoo Finance's public endpoints:
 
 | Purpose | Endpoint |
 | --- | --- |
-| Quote and price history | `/v8/finance/chart/{symbol}` |
+| Quote and daily price history | `/v8/finance/chart/{symbol}` |
 | Symbol search | `/v1/finance/search` |
 
 No API key or signup is needed. Two caveats worth knowing:
@@ -153,7 +205,7 @@ trading decisions.
 ```
 lib/main.dart            App root, providers and theme wiring
 lib/models/
-  types.dart             PricePoint, Candle, Quote, History, RangeKey
+  types.dart             PricePoint, Candle, Quote, History, ChartWindow
   alert.dart             PriceAlert and the pure firing logic (unit tested)
 lib/api/
   parse.dart             Pure parsers for the Yahoo payloads (unit tested)
@@ -168,10 +220,12 @@ lib/background/
 lib/notifications/
   notifications.dart     Local notification channel, permission and posting
 lib/screens/             Watchlist, Search, Detail, Alerts
-lib/widgets/             QuoteRow, PriceChart, Sparkline, ChangePill, AlertSheet
+lib/widgets/             QuoteRow, PriceChart, RsiPane, Sparkline, ChangePill,
+                         AlertSheet
 lib/utils/
   format.dart            Price, change and date formatting
-  chart.dart             Line and candle geometry, aggregation (unit tested)
+  chart.dart             Line and candle geometry, zoom limits (unit tested)
+  indicators.dart        Moving averages and Wilder RSI (unit tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
 test/                    Tests and payload fixtures
 ```

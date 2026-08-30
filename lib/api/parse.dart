@@ -172,37 +172,20 @@ Quote parseQuote(Object? payload, {int? fetchedAt}) {
   );
 }
 
-/// Builds a detail-screen series from a chart payload for the given range.
-History parseHistory(Object? payload, RangeKey range) {
+/// Builds the detail-screen series from a daily chart payload.
+History parseHistory(Object? payload) {
   final result = _chartResult(payload);
   final meta = _map(result['meta']) ?? const <String, dynamic>{};
   final candles = parseCandles(result);
 
   if (candles.isEmpty) {
-    throw const FeedException('No price history available for this range');
+    throw const FeedException('No price history available');
   }
-
-  // For an intraday range the day's move is measured from the previous close,
-  // not from the first tick of the session — otherwise an overnight gap
-  // silently disappears from the chart's headline number.
-  final baseline = range == RangeKey.d1
-      ? (_num(meta['chartPreviousClose']) ??
-            _num(meta['previousClose']) ??
-            candles.first.close)
-      : candles.first.close;
-
-  final last = candles.last.close;
-  final change = last - baseline;
 
   return History(
     symbol: _str(meta['symbol']) ?? '',
-    range: range,
     candles: candles,
     currency: _str(meta['currency']) ?? 'USD',
-    first: baseline,
-    last: last,
-    change: change,
-    changePercent: baseline != 0 ? (change / baseline) * 100 : 0,
   );
 }
 

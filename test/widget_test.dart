@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ticker/api/yahoo.dart';
 import 'package:ticker/main.dart';
 import 'package:ticker/state/alerts.dart';
+import 'package:ticker/models/types.dart';
 import 'package:ticker/widgets/price_chart.dart';
 
 import 'helpers.dart';
@@ -127,8 +128,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Remove from watchlist'), findsOneWidget);
-    // The range picker only exists on the detail screen.
-    expect(find.text('5Y'), findsOneWidget);
+    // The zoom controls only exist on the detail screen.
+    expect(find.byTooltip('Zoom in, fewer days'), findsOneWidget);
 
     await teardown(tester);
   });
@@ -271,23 +272,25 @@ void main() {
     await teardown(tester);
   });
 
-  testWidgets('scrubbing the chart reveals the bar OHLC', (tester) async {
+  testWidgets('long pressing the chart reveals the bar OHLC', (tester) async {
     await tester.pumpWidget(appWith(respondingWith(chart1d)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
 
-    // Nothing scrubbed yet, so the header shows the range caption instead.
+    // Nothing scrubbed yet, so the header shows the window caption instead.
     expect(find.text('O '), findsNothing);
 
-    final chart = find.byType(PriceChart);
-    final centre = tester.getCenter(chart);
+    // A plain drag now pans, so the crosshair is behind a long press.
+    final centre = tester.getCenter(find.byType(PriceChart));
     final gesture = await tester.startGesture(centre);
-    await gesture.moveBy(const Offset(20, 0));
+    // Past the long-press threshold, so the crosshair takes the gesture
+    // rather than the pan.
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveBy(const Offset(12, 0));
     await tester.pumpAndSettle();
 
-    // The O/H/L/C strip replaces the caption while a finger is down.
     expect(find.text('O '), findsOneWidget);
     expect(find.text('H '), findsOneWidget);
     expect(find.text('L '), findsOneWidget);
@@ -296,6 +299,187 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
     expect(find.text('O '), findsNothing);
+
+    await teardown(tester);
+  });
+
+  /// A chart payload with [count] bars, so the longer indicators can warm up.
+  /// The fixture only carries four.
+  String syntheticChart(int count) {
+    final t = <int>[];
+    final o = <String>[];
+    final h = <String>[];
+    final l = <String>[];
+    final c = <String>[];
+    for (var i = 0; i < count; i++) {
+      final base = 100 + (i % 11) - 5 + i * 0.1;
+      t.add(1700000000 + i * 300);
+      o.add(base.toStringAsFixed(4));
+      h.add((base + 1).toStringAsFixed(4));
+      l.add((base - 1).toStringAsFixed(4));
+      c.add((base + 0.5).toStringAsFixed(4));
+    }
+    return '{"chart":{"result":[{"meta":{"currency":"USD","symbol":"AAPL",'
+        '"regularMarketPrice":100,"previousClose":99,"longName":"Apple Inc.",'
+        '"marketState":"REGULAR"},"timestamp":[${t.join(",")}],'
+        '"indicators":{"quote":[{"open":[${o.join(",")}],'
+        '"high":[${h.join(",")}],"low":[${l.join(",")}],'
+        '"close":[${c.join(",")}]}]}}],"error":null}}';
+  }
+
+  testWidgets('shows moving averages and RSI once enough bars exist', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(150))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // The legend is always present, so three same-shaped lines are never
+    // identified by colour alone.
+    for (final label in ['MA20', 'MA50', 'MA100']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    // With 150 bars every period has warmed up, so none read n/a.
+    expect(find.text('n/a'), findsNothing);
+
+    expect(find.text('RSI (14)'), findsOneWidget);
+    // The RSI readout is a number, not the em dash placeholder.
+    final rsiRow = find.ancestor(
+      of: find.text('RSI (14)'),
+      matching: find.byType(Row),
+    );
+    expect(
+      find.descendant(of: rsiRow.first, matching: find.text('—')),
+      findsNothing,
+    );
+
+    await teardown(tester);
+  });
+
+  testWidgets('marks a moving average unavailable on too short a range', (
+    tester,
+  ) async {
+    // The fixture has four bars, so no period can warm up.
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // Shown but flagged, rather than silently absent.
+    expect(find.text('MA20'), findsOneWidget);
+    expect(find.text('n/a'), findsNWidgets(3));
+
+    await teardown(tester);
+  });
+
+  testWidgets('tapping a legend chip toggles that average off', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(150))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    PriceChart chartWidget() =>
+        tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(chartWidget().overlays, hasLength(3));
+
+    await tester.tap(find.text('MA50'));
+    await tester.pumpAndSettle();
+
+    final periods = chartWidget().overlays.map((o) => o.period);
+    expect(periods, [20, 100]);
+
+    await tester.tap(find.text('MA50'));
+    await tester.pumpAndSettle();
+    expect(chartWidget().overlays, hasLength(3));
+
+    await teardown(tester);
+  });
+
+  testWidgets('opens on the most recent bars, not the whole series', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+    // 90 days by default, anchored to the newest bar.
+    expect(chart.window.count, 90);
+    expect(chart.window.end, 400);
+    expect(find.text('90 days'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the zoom buttons change how many days are shown', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    int visible() =>
+        tester.widget<PriceChart>(find.byType(PriceChart)).window.count;
+    expect(visible(), 90);
+
+    await tester.tap(find.byTooltip('Zoom in, fewer days'));
+    await tester.pumpAndSettle();
+    expect(visible(), lessThan(90));
+
+    final zoomedIn = visible();
+    await tester.tap(find.byTooltip('Zoom out, more days'));
+    await tester.pumpAndSettle();
+    expect(visible(), greaterThan(zoomedIn));
+
+    await teardown(tester);
+  });
+
+  testWidgets('dragging pans through history without changing the zoom', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    ChartWindow window() =>
+        tester.widget<PriceChart>(find.byType(PriceChart)).window;
+    final before = window();
+
+    // Dragging right pulls older bars into view.
+    await tester.drag(find.byType(PriceChart), const Offset(120, 0));
+    await tester.pumpAndSettle();
+
+    expect(window().start, lessThan(before.start));
+    expect(window().count, before.count, reason: 'panning must not zoom');
+
+    await teardown(tester);
+  });
+
+  testWidgets('cannot pan past the start of the series', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(150))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    for (var i = 0; i < 8; i++) {
+      await tester.drag(find.byType(PriceChart), const Offset(300, 0));
+      await tester.pumpAndSettle();
+    }
+
+    final window = tester.widget<PriceChart>(find.byType(PriceChart)).window;
+    expect(window.start, 0);
+    expect(window.count, 90);
 
     await teardown(tester);
   });
