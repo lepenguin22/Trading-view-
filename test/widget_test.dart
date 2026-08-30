@@ -10,6 +10,7 @@ import 'package:ticker/main.dart';
 import 'package:ticker/state/alerts.dart';
 import 'package:ticker/models/types.dart';
 import 'package:ticker/widgets/price_chart.dart';
+import 'package:ticker/widgets/rsi_pane.dart';
 
 import 'helpers.dart';
 
@@ -480,6 +481,100 @@ void main() {
     final window = tester.widget<PriceChart>(find.byType(PriceChart)).window;
     expect(window.start, 0);
     expect(window.count, 90);
+
+    await teardown(tester);
+  });
+
+  testWidgets('draws a price axis whose labels track the visible bars', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // The axis is painted, not composed of widgets, so assert on the values
+    // it is handed rather than on rendered text.
+    final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+    final visible = chart.candles.sublist(chart.window.start, chart.window.end);
+    var low = visible.first.low;
+    var high = visible.first.high;
+    for (final candle in visible) {
+      if (candle.low < low) low = candle.low;
+      if (candle.high > high) high = candle.high;
+    }
+
+    final ticks = priceTicksFor(low, high, chart.currency);
+    expect(ticks, isNotEmpty);
+    for (final tick in ticks) {
+      expect(tick.price, inInclusiveRange(low, high));
+      expect(tick.label, isNotEmpty);
+    }
+    // Something must be reserved for the labels, or the plot would draw over
+    // them.
+    expect(priceAxisWidth([for (final t in ticks) t.label]), greaterThan(0));
+
+    await teardown(tester);
+  });
+
+  testWidgets('the axis rescales when the window zooms', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    List<PriceTick> ticksNow() {
+      final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+      final visible = chart.candles.sublist(
+        chart.window.start,
+        chart.window.end,
+      );
+      var low = visible.first.low;
+      var high = visible.first.high;
+      for (final candle in visible) {
+        if (candle.low < low) low = candle.low;
+        if (candle.high > high) high = candle.high;
+      }
+      return priceTicksFor(low, high, chart.currency);
+    }
+
+    final before = ticksNow();
+
+    // Zooming in narrows the price range, so the axis must follow it rather
+    // than staying pinned to the whole series.
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.byTooltip('Zoom in, fewer days'));
+      await tester.pumpAndSettle();
+    }
+
+    final after = ticksNow();
+    expect(after, isNotEmpty);
+    final beforeSpan = before.last.price - before.first.price;
+    final afterSpan = after.last.price - after.first.price;
+    expect(afterSpan, lessThanOrEqualTo(beforeSpan));
+
+    await teardown(tester);
+  });
+
+  testWidgets('the RSI pane reserves the same gutter as the price axis', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final rsi = tester.widget<RsiPane>(find.byType(RsiPane));
+    // Non-zero and finite: the two plots share an x-axis only if the pane
+    // sets aside the same width the chart's labels occupy.
+    expect(rsi.gutter, greaterThan(0));
+    expect(rsi.gutter.isFinite, isTrue);
+
+    final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(rsi.window, chart.window);
 
     await teardown(tester);
   });

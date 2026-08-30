@@ -3,9 +3,54 @@ import 'package:flutter/material.dart';
 import '../models/types.dart';
 import '../theme/app_theme.dart';
 import '../utils/chart.dart';
+import '../utils/format.dart';
 
 const _defaultHeight = 220.0;
 const _padding = 10.0;
+
+/// Gap between the plot and its price axis.
+const _axisGap = 6.0;
+
+/// Type scale for the axis labels and the price tags.
+const axisLabelSize = 10.0;
+
+/// Measures the gutter a price axis needs for [labels], so the plot can be
+/// narrowed before any geometry is built.
+///
+/// Measured rather than guessed: a four-figure price with a thousands
+/// separator is far wider than a two-figure one, and a fixed gutter would
+/// either clip those or waste space on every other symbol.
+double priceAxisWidth(List<String> labels) {
+  var widest = 0.0;
+  for (final label in labels) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(fontSize: axisLabelSize),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    if (painter.width > widest) widest = painter.width;
+  }
+  return widest == 0 ? 0 : widest + _axisGap;
+}
+
+/// One horizontal gridline: where it sits in price, and what it reads.
+typedef PriceTick = ({double price, String label});
+
+/// Chooses the gridlines for a price range, in the currency's display units.
+List<PriceTick> priceTicksFor(double min, double max, String currency) {
+  final ticks = niceTicks(axisScale(min, currency), axisScale(max, currency));
+  if (ticks.isEmpty) return const [];
+  final decimals = axisDecimals(ticks);
+  return [
+    for (final tick in ticks)
+      (
+        price: axisUnscale(tick, currency),
+        label: formatAxisNumber(tick, decimals),
+      ),
+  ];
+}
 
 /// How the detail screen draws a price series.
 enum ChartStyle {
@@ -48,6 +93,7 @@ class PriceChart extends StatefulWidget {
     required this.onWindowChanged,
     this.style = ChartStyle.candles,
     this.overlays = const [],
+    this.currency = 'USD',
     this.height = _defaultHeight,
     this.baseline,
     this.onScrub,
@@ -70,6 +116,9 @@ class PriceChart extends StatefulWidget {
 
   /// Moving averages drawn on top of the price series.
   final List<MaOverlay> overlays;
+
+  /// Quoted currency, for scaling and labelling the price axis.
+  final String currency;
 
   final double height;
 
@@ -181,19 +230,36 @@ class _PriceChartState extends State<PriceChart> {
         width: double.infinity,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final width = constraints.maxWidth;
-            _width = width;
-
             // The window is the whole story now: one candle is one day, and
             // zooming changes how many days are on screen, never what a bar
             // means.
             final window = widget.window.clampTo(
               total: widget.candles.length,
-              maxBars: maxCandlesFor(width),
+              maxBars: maxCandlesFor(constraints.maxWidth),
             );
             _drawn = window.count <= 0
                 ? const []
                 : widget.candles.sublist(window.start, window.end);
+
+            // The axis is measured and subtracted before any geometry is
+            // built, so the plot never draws underneath its own labels.
+            final range = _priceRange(_drawn, widget.style);
+            final ticks = range == null
+                ? const <PriceTick>[]
+                : priceTicksFor(range.min, range.max, widget.currency);
+            final axisWidth = priceAxisWidth([
+              for (final tick in ticks) tick.label,
+            ]);
+            final decimals = axisDecimals([
+              for (final tick in ticks) axisScale(tick.price, widget.currency),
+            ]);
+            String labelFor(double price) =>
+                formatAxisNumber(axisScale(price, widget.currency), decimals);
+            final width = (constraints.maxWidth - axisWidth).clamp(
+              1.0,
+              constraints.maxWidth,
+            );
+            _width = width;
 
             // Indicators are computed over the full series, so slicing to the
             // window keeps a 20 SMA correct at the left edge — it still uses
@@ -227,6 +293,14 @@ class _PriceChartState extends State<PriceChart> {
                 ruleColor: c.textFaint,
                 baseline: widget.baseline,
                 scrubIndex: _scrubIndex,
+                axis: _AxisSpec(
+                  ticks: ticks,
+                  plotWidth: width,
+                  gridColor: c.border,
+                  labelColor: c.textFaint,
+                  tagTextColor: c.card,
+                  labelFor: labelFor,
+                ),
               );
             } else {
               final geometry = buildChart(
@@ -245,6 +319,14 @@ class _PriceChartState extends State<PriceChart> {
                 dotBorderColor: c.card,
                 baseline: widget.baseline,
                 scrubIndex: _scrubIndex,
+                axis: _AxisSpec(
+                  ticks: ticks,
+                  plotWidth: width,
+                  gridColor: c.border,
+                  labelColor: c.textFaint,
+                  tagTextColor: c.card,
+                  labelFor: labelFor,
+                ),
               );
             }
 
@@ -264,7 +346,9 @@ class _PriceChartState extends State<PriceChart> {
               onLongPressEnd: (_) => _endScrub(),
               onLongPressCancel: _endScrub,
               child: CustomPaint(
-                size: Size(width, widget.height),
+                // The canvas spans the gutter too; the painter clips the plot
+                // to `plotWidth` and draws the axis in what is left.
+                size: Size(constraints.maxWidth, widget.height),
                 painter: painter,
               ),
             );
@@ -273,6 +357,146 @@ class _PriceChartState extends State<PriceChart> {
       ),
     );
   }
+}
+
+/// The vertical extent the axis must span.
+///
+/// Candles need every wick inside the viewport, so the range runs low-to-high;
+/// the line view only draws closes, and using highs there would leave the line
+/// floating in dead space.
+({double min, double max})? _priceRange(List<Candle> drawn, ChartStyle style) {
+  if (drawn.isEmpty) return null;
+  var min = style == ChartStyle.candles ? drawn.first.low : drawn.first.close;
+  var max = style == ChartStyle.candles ? drawn.first.high : drawn.first.close;
+  for (final candle in drawn) {
+    final low = style == ChartStyle.candles ? candle.low : candle.close;
+    final high = style == ChartStyle.candles ? candle.high : candle.close;
+    if (low < min) min = low;
+    if (high > max) max = high;
+  }
+  return (min: min, max: max);
+}
+
+/// Everything the painters need to draw the price axis.
+class _AxisSpec {
+  const _AxisSpec({
+    required this.ticks,
+    required this.plotWidth,
+    required this.gridColor,
+    required this.labelColor,
+    required this.tagTextColor,
+    required this.labelFor,
+  });
+
+  final List<PriceTick> ticks;
+
+  /// Where the plot ends and the gutter begins.
+  final double plotWidth;
+
+  final Color gridColor;
+  final Color labelColor;
+
+  /// Ink for text sitting on a filled price tag.
+  final Color tagTextColor;
+
+  /// Formats a raw quote price the way the axis labels it, so a price tag
+  /// reads in the same units and precision as the gridlines beside it.
+  /// Excluded from equality: it is derived from the same inputs as [ticks].
+  final String Function(double price) labelFor;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _AxisSpec &&
+      other.plotWidth == plotWidth &&
+      other.gridColor == gridColor &&
+      other.labelColor == labelColor &&
+      _sameTicks(other.ticks, ticks);
+
+  @override
+  int get hashCode => Object.hash(plotWidth, ticks.length, gridColor);
+
+  static bool _sameTicks(List<PriceTick> a, List<PriceTick> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].price != b[i].price || a[i].label != b[i].label) return false;
+    }
+    return true;
+  }
+}
+
+/// Draws the gridlines and their labels. Gridlines run only across the plot so
+/// they never cross into the gutter and collide with the text.
+void _paintAxis(
+  Canvas canvas,
+  _AxisSpec axis,
+  Size size,
+  double Function(double) yFor,
+) {
+  for (final tick in axis.ticks) {
+    final y = yFor(tick.price);
+    if (y < 0 || y > size.height) continue;
+
+    canvas.drawLine(
+      Offset(0, y),
+      Offset(axis.plotWidth, y),
+      Paint()
+        ..strokeWidth = 1
+        ..color = axis.gridColor,
+    );
+
+    final label = TextPainter(
+      text: TextSpan(
+        text: tick.label,
+        style: TextStyle(color: axis.labelColor, fontSize: axisLabelSize),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    label.paint(
+      canvas,
+      Offset(axis.plotWidth + _axisGap, y - label.height / 2),
+    );
+  }
+}
+
+/// Draws a filled price tag in the gutter — the current price, or the one
+/// under the finger. This is what makes a level readable at a glance rather
+/// than by interpolating between gridlines.
+void _paintPriceTag(
+  Canvas canvas,
+  _AxisSpec axis,
+  Size size,
+  double y,
+  String label,
+  Color fill,
+) {
+  if (y < 0 || y > size.height) return;
+
+  final painter = TextPainter(
+    text: TextSpan(
+      text: label,
+      style: TextStyle(
+        color: axis.tagTextColor,
+        fontSize: axisLabelSize,
+        fontWeight: FontWeight.w600,
+      ),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
+
+  final rect = Rect.fromLTWH(
+    axis.plotWidth + 2,
+    y - painter.height / 2 - 2,
+    (size.width - axis.plotWidth - 4).clamp(0.0, double.infinity),
+    painter.height + 4,
+  );
+  canvas.drawRRect(
+    RRect.fromRectAndRadius(rect, const Radius.circular(3)),
+    Paint()..color = fill,
+  );
+  painter.paint(
+    canvas,
+    Offset(rect.left + (rect.width - painter.width) / 2, rect.top + 2),
+  );
 }
 
 /// A sampled overlay ready to draw: one colour, one value per drawn bar.
@@ -339,6 +563,7 @@ class _CandlePainter extends CustomPainter {
     required this.ruleColor,
     required this.baseline,
     required this.scrubIndex,
+    required this.axis,
   });
 
   final CandleGeometry? geometry;
@@ -349,11 +574,15 @@ class _CandlePainter extends CustomPainter {
   final Color ruleColor;
   final double? baseline;
   final int? scrubIndex;
+  final _AxisSpec axis;
 
   @override
   void paint(Canvas canvas, Size size) {
     final geometry = this.geometry;
     if (geometry == null) return;
+
+    // Behind everything: gridlines are reference, not content.
+    _paintAxis(canvas, axis, size, geometry.yFor);
 
     final base = baseline;
     if (base != null) {
@@ -399,7 +628,7 @@ class _CandlePainter extends CustomPainter {
     _drawOverlays(canvas, overlays, geometry.xs, geometry.yFor);
 
     final i = scrubIndex;
-    if (i != null && i < geometry.xs.length) {
+    if (i != null && i < geometry.xs.length && i < candles.length) {
       canvas.drawLine(
         Offset(geometry.xs[i], 0),
         Offset(geometry.xs[i], size.height),
@@ -407,11 +636,33 @@ class _CandlePainter extends CustomPainter {
           ..strokeWidth = 1
           ..color = ruleColor,
       );
+      // While scrubbing the tag follows the finger, so the bar's close can be
+      // read straight off the axis.
+      final scrubbed = candles[i];
+      _paintPriceTag(
+        canvas,
+        axis,
+        size,
+        geometry.yFor(scrubbed.close),
+        axis.labelFor(scrubbed.close),
+        scrubbed.isUp ? up : down,
+      );
+    } else if (candles.isNotEmpty) {
+      final latest = candles.last;
+      _paintPriceTag(
+        canvas,
+        axis,
+        size,
+        geometry.yFor(latest.close),
+        axis.labelFor(latest.close),
+        latest.isUp ? up : down,
+      );
     }
   }
 
   @override
   bool shouldRepaint(_CandlePainter old) =>
+      old.axis != axis ||
       old.overlays != overlays ||
       old.candles != candles ||
       old.geometry != geometry ||
@@ -431,6 +682,7 @@ class _LinePainter extends CustomPainter {
     required this.dotBorderColor,
     required this.baseline,
     required this.scrubIndex,
+    required this.axis,
   });
 
   final ChartGeometry? geometry;
@@ -441,11 +693,14 @@ class _LinePainter extends CustomPainter {
   final Color dotBorderColor;
   final double? baseline;
   final int? scrubIndex;
+  final _AxisSpec axis;
 
   @override
   void paint(Canvas canvas, Size size) {
     final chart = geometry;
     if (chart == null) return;
+
+    _paintAxis(canvas, axis, size, chart.yFor);
 
     final line = Path()..moveTo(chart.xs.first, chart.ys.first);
     for (var i = 1; i < chart.xs.length; i++) {
@@ -501,6 +756,7 @@ class _LinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_LinePainter old) =>
+      old.axis != axis ||
       old.overlays != overlays ||
       old.geometry != geometry ||
       old.color != color ||

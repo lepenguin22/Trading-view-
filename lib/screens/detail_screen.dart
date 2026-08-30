@@ -122,6 +122,24 @@ class _DetailScreenState extends State<DetailScreen> {
   int get _maxBarsOnScreen =>
       maxCandlesFor(MediaQuery.of(context).size.width - 32);
 
+  /// Width the price chart reserves for its axis, mirrored so the RSI pane
+  /// below shares the same x-axis. Recomputed from the visible bars so it
+  /// tracks the labels the chart is actually drawing.
+  double get _axisGutter {
+    final visible = _visible;
+    if (visible.isEmpty) return 0;
+    var min = visible.first.low;
+    var max = visible.first.high;
+    for (final candle in visible) {
+      if (candle.low < min) min = candle.low;
+      if (candle.high > max) max = candle.high;
+    }
+    final currency = _history?.currency ?? 'USD';
+    return priceAxisWidth([
+      for (final tick in priceTicksFor(min, max, currency)) tick.label,
+    ]);
+  }
+
   /// The bars currently on screen, or empty before history lands.
   List<Candle> get _visible {
     final history = _history;
@@ -252,7 +270,7 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(height: 6),
               _maLegend(),
               const SizedBox(height: 14),
-              RsiPane(values: _rsi, window: _window),
+              RsiPane(values: _rsi, window: _window, gutter: _axisGutter),
             ],
             if (quote != null) ...[
               const SizedBox(height: 20),
@@ -319,6 +337,7 @@ class _DetailScreenState extends State<DetailScreen> {
           color: color,
           style: _style,
           window: _window,
+          currency: _history?.currency ?? 'USD',
           onWindowChanged: (w) => setState(() => _window = w),
           onInteractingChanged: (v) {
             if (v != _interacting) setState(() => _interacting = v);

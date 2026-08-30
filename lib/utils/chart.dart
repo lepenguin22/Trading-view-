@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import '../models/types.dart';
 
 /// Shared vertical projection for both chart forms.
@@ -186,4 +188,64 @@ int nearestIndex(List<double> xs, double x) {
     }
   }
   return best;
+}
+
+/// Tick values for a price axis, at round numbers inside [min]..[max].
+///
+/// Steps are chosen from 1, 2, 2.5 and 5 times a power of ten, so labels land
+/// on values a reader recognises (120, 122.50, 125) rather than on an even
+/// division of the data's own range (121.37, 123.94). [target] is a hint: the
+/// rounding means the real count lands near it, not on it.
+List<double> niceTicks(double min, double max, {int target = 5}) {
+  if (!min.isFinite || !max.isFinite || target <= 0) return const [];
+  if (max < min) return const [];
+  // A flat series has no range to divide; one label at the level is honest.
+  if (max == min) return [min];
+
+  final rawStep = (max - min) / target;
+  final magnitude = math
+      .pow(10, (math.log(rawStep) / math.ln10).floor())
+      .toDouble();
+  if (magnitude <= 0 || !magnitude.isFinite) return [min];
+
+  final normalised = rawStep / magnitude;
+  final double step;
+  if (normalised <= 1) {
+    step = magnitude;
+  } else if (normalised <= 2) {
+    step = 2 * magnitude;
+  } else if (normalised <= 2.5) {
+    step = 2.5 * magnitude;
+  } else if (normalised <= 5) {
+    step = 5 * magnitude;
+  } else {
+    step = 10 * magnitude;
+  }
+
+  final ticks = <double>[];
+  // Start at the first round value at or above the minimum.
+  var value = (min / step).ceil() * step;
+  // Guard against a step so small that the loop would not terminate sensibly.
+  while (value <= max + step * 1e-9 && ticks.length < 100) {
+    // Re-round each tick: repeated addition of a fractional step drifts, and
+    // a label reading 122.50000000000001 is a visible bug.
+    ticks.add((value / step).round() * step);
+    value += step;
+  }
+  return ticks;
+}
+
+/// Decimal places an axis needs so neighbouring ticks stay distinct.
+///
+/// A £2.50 step needs two decimals; a £50 step needs none. Driven by the step
+/// rather than the values, so every label on the axis agrees.
+int axisDecimals(List<double> ticks) {
+  if (ticks.length < 2) return 2;
+  final step = (ticks[1] - ticks[0]).abs();
+  if (step <= 0) return 2;
+  for (final places in [0, 1, 2, 3, 4]) {
+    final factor = math.pow(10, places);
+    if ((step * factor - (step * factor).round()).abs() < 1e-6) return places;
+  }
+  return 4;
 }

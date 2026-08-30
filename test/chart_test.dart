@@ -170,4 +170,81 @@ void main() {
       expect(buildCandleChart([bar(1, 2, 0, 1)], width: 0, height: 50), isNull);
     });
   });
+
+  group('niceTicks', () {
+    test('lands on round numbers, not on divisions of the raw range', () {
+      // A reader recognises 120 and 125; 121.37 is noise.
+      final ticks = niceTicks(119.4, 137.8, target: 5);
+      expect(ticks, isNotEmpty);
+      for (final t in ticks) {
+        expect(t % 5, closeTo(0, 1e-9), reason: '$t is not a round step');
+      }
+      expect(ticks.first, greaterThanOrEqualTo(119.4));
+      expect(ticks.last, lessThanOrEqualTo(137.8));
+    });
+
+    test('produces roughly the requested number of ticks', () {
+      for (final range in [
+        [0.0, 1.0],
+        [99.0, 101.0],
+        [1200.0, 4800.0],
+        [0.0012, 0.0089],
+      ]) {
+        final ticks = niceTicks(range[0], range[1], target: 5);
+        expect(ticks.length, inInclusiveRange(2, 12), reason: '$range');
+      }
+    });
+
+    test('every tick sits inside the range', () {
+      final ticks = niceTicks(37.2, 41.9);
+      for (final t in ticks) {
+        expect(t, inInclusiveRange(37.2, 41.9));
+      }
+    });
+
+    test('does not accumulate floating point drift', () {
+      // Repeated addition of 2.5 is where a naive loop produces 122.50000001.
+      final ticks = niceTicks(100, 125, target: 10);
+      for (final t in ticks) {
+        expect(
+          (t * 100 - (t * 100).round()).abs(),
+          lessThan(1e-6),
+          reason: '$t has drifted',
+        );
+      }
+    });
+
+    test('a flat range yields the single level rather than nothing', () {
+      expect(niceTicks(50, 50), [50]);
+    });
+
+    test('is empty for degenerate input', () {
+      expect(niceTicks(double.nan, 10), isEmpty);
+      expect(niceTicks(10, double.infinity), isEmpty);
+      expect(niceTicks(10, 5), isEmpty, reason: 'max below min');
+      expect(niceTicks(1, 10, target: 0), isEmpty);
+    });
+
+    test('handles sub-unit prices without collapsing', () {
+      final ticks = niceTicks(0.0421, 0.0468);
+      expect(ticks.length, greaterThan(1));
+      expect(ticks.first, greaterThanOrEqualTo(0.0421));
+    });
+  });
+
+  group('axisDecimals', () {
+    test('uses no decimals for a whole-number step', () {
+      expect(axisDecimals([100, 110, 120]), 0);
+    });
+
+    test('uses enough decimals to keep a fractional step distinct', () {
+      expect(axisDecimals([100, 102.5, 105]), 1);
+      expect(axisDecimals([1.00, 1.05, 1.10]), 2);
+    });
+
+    test('falls back to two places when there is no step to read', () {
+      expect(axisDecimals(const []), 2);
+      expect(axisDecimals(const [42]), 2);
+    });
+  });
 }

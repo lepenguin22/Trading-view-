@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/types.dart';
 import '../theme/app_theme.dart';
 import '../utils/indicators.dart';
+import 'price_chart.dart' show axisLabelSize;
 
 const _paneHeight = 64.0;
 
@@ -16,6 +17,7 @@ class RsiPane extends StatelessWidget {
     super.key,
     required this.values,
     required this.window,
+    required this.gutter,
     this.height = _paneHeight,
   });
 
@@ -25,6 +27,11 @@ class RsiPane extends StatelessWidget {
   /// The same slice the price chart is drawing, so the two plots stay aligned
   /// bar for bar as the user zooms and pans.
   final ChartWindow window;
+
+  /// Width reserved on the right for the price chart's axis. Mirrored here so
+  /// the two plots share an x-axis — an RSI trough must sit under the candle
+  /// that caused it.
+  final double gutter;
 
   final double height;
 
@@ -76,6 +83,10 @@ class RsiPane extends StatelessWidget {
               size: Size(constraints.maxWidth, height),
               painter: _RsiPainter(
                 values: visible,
+                plotWidth: (constraints.maxWidth - gutter).clamp(
+                  1.0,
+                  constraints.maxWidth,
+                ),
                 line: c.accent,
                 guide: c.border,
                 guideText: c.textFaint,
@@ -93,6 +104,7 @@ class RsiPane extends StatelessWidget {
 class _RsiPainter extends CustomPainter {
   const _RsiPainter({
     required this.values,
+    required this.plotWidth,
     required this.line,
     required this.guide,
     required this.guideText,
@@ -101,6 +113,10 @@ class _RsiPainter extends CustomPainter {
   });
 
   final List<double?> values;
+
+  /// Where the plot stops and the price chart's gutter begins.
+  final double plotWidth;
+
   final Color line;
   final Color guide;
   final Color guideText;
@@ -123,27 +139,29 @@ class _RsiPainter extends CustomPainter {
         ..color = guide;
       const dash = 3.0;
       const gap = 4.0;
-      for (var x = 0.0; x < size.width; x += dash + gap) {
+      for (var x = 0.0; x < plotWidth; x += dash + gap) {
         canvas.drawLine(
           Offset(x, y),
-          Offset((x + dash).clamp(0.0, size.width), y),
+          Offset((x + dash).clamp(0.0, plotWidth), y),
           paint,
         );
       }
 
+      // Labelled in the gutter, so this pane reads like the price axis above
+      // it rather than putting its numbers inside the plot.
       final label = TextPainter(
         text: TextSpan(
           text: level.toStringAsFixed(0),
-          style: TextStyle(color: guideText, fontSize: 9),
+          style: TextStyle(color: guideText, fontSize: axisLabelSize),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
-      label.paint(canvas, Offset(2, y - label.height - 1));
+      label.paint(canvas, Offset(plotWidth + 6, y - label.height / 2));
     }
 
     final xs = [
       for (var i = 0; i < values.length; i++)
-        values.length == 1 ? 0.0 : (i / (values.length - 1)) * size.width,
+        values.length == 1 ? 0.0 : (i / (values.length - 1)) * plotWidth,
     ];
 
     final paint = Paint()
@@ -188,5 +206,5 @@ class _RsiPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RsiPainter old) =>
-      old.values != values || old.line != line;
+      old.values != values || old.plotWidth != plotWidth || old.line != line;
 }
