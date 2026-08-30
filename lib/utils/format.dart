@@ -31,6 +31,31 @@ String formatPrice(double value, [String currency = 'USD']) {
   ).format(amount);
 }
 
+/// Formats an already-scaled axis value. No currency symbol: the axis repeats
+/// its label at every gridline and the currency is in the header, so carrying
+/// it here would widen the gutter for no information. [decimals] is chosen for
+/// the axis as a whole, so labels line up on the decimal point.
+String formatAxisNumber(double displayValue, int decimals) {
+  if (!displayValue.isFinite) return '—';
+  return NumberFormat.decimalPatternDigits(decimalDigits: decimals)
+      .format(displayValue);
+}
+
+/// Converts a quoted price into the units the axis labels it in.
+///
+/// London tickers quote in pence, so an axis drawn in raw quote units would
+/// read 7,800 where the header reads £78.00.
+double axisScale(double value, String currency) {
+  final minor = _minorUnitCurrencies[currency];
+  return minor != null ? value / minor.divisor : value;
+}
+
+/// Inverse of [axisScale], for placing a label's gridline back on the plot.
+double axisUnscale(double displayValue, String currency) {
+  final minor = _minorUnitCurrencies[currency];
+  return minor != null ? displayValue * minor.divisor : displayValue;
+}
+
 /// Formats an absolute change with an explicit sign, e.g. "+2.50".
 String formatChange(double value) {
   if (!value.isFinite) return '—';

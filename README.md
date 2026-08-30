@@ -48,6 +48,9 @@ chart fetches five years of daily bars in a single request and you choose what
 to look at by zooming, the way a desktop charting tool works. Zooming changes
 how many days are on screen; it never changes what a bar means.
 
+- A **price axis** down the right-hand side, with gridlines at round values and
+  a tag marking the latest close — or, while scrubbing, the close of the bar
+  under your finger.
 - **Pinch** to zoom, anchored on the point between your fingers.
 - **Drag** to pan through history.
 - **Long press and drag** for the crosshair and the O/H/L/C readout — a plain
@@ -58,6 +61,19 @@ how many days are on screen; it never changes what a bar means.
 The header reports the move across the **visible window**, so zooming changes
 what the percentage is measured over, and the caption names the span and its
 dates.
+
+**The price axis rescales with the view.** Gridlines are placed at round
+numbers — steps of 1, 2, 2.5 or 5 times a power of ten — rather than at even
+divisions of whatever range happens to be on screen, so labels read 122.50
+rather than 121.37. Its gutter is measured from the widest label rather than
+fixed, so a four-figure price is never clipped and a two-figure one wastes no
+space. The RSI pane below reserves the same gutter, which is what keeps the two
+plots sharing an x-axis: an RSI trough sits under the candle that caused it.
+
+Axis labels drop the currency symbol — it is in the header, and repeating it at
+every gridline would only widen the gutter. Pence-quoted London tickers are
+scaled to pounds first, so the axis agrees with the header rather than reading
+7,800 where the header reads £78.00.
 
 **How far out you can zoom is limited by legibility, not by merging bars.**
 Since a bar is always a day, the chart refuses to shrink candles below about
