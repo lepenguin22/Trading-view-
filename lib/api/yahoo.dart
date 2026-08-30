@@ -53,6 +53,12 @@ const _requestTimeout = Duration(seconds: 12);
 
 const _unreachable = 'Could not reach Yahoo Finance. Check your connection.';
 
+/// Span of daily history fetched for the detail chart.
+const historyRange = '5y';
+
+/// One bar per trading day — the chart's fixed resolution.
+const historyInterval = '1d';
+
 /// Yahoo returns 429 to clients that look automated, so present a browser UA.
 const _headers = {
   'User-Agent':
@@ -157,17 +163,18 @@ class YahooApi {
     return QuoteBatch(quotes: quotes, errors: errors);
   }
 
-  /// Fetches a price series for the detail screen.
-  Future<History> fetchHistory(
-    String symbol,
-    RangeKey range, {
-    CancelToken? token,
-  }) async {
+  /// Fetches daily price history for the detail screen.
+  ///
+  /// One candle is one trading day, and the chart is zoomed and panned rather
+  /// than re-fetched per timeframe, so the whole span comes down in one
+  /// request. Five years of daily bars is around 1,250 points — small enough
+  /// to hold and pan through, and far more than fits on screen at once.
+  Future<History> fetchHistory(String symbol, {CancelToken? token}) async {
     final payload = await _fetchJson(
-      _chartPath(symbol, range.range, range.interval),
+      _chartPath(symbol, historyRange, historyInterval),
       token,
     );
-    return parseHistory(payload, range);
+    return parseHistory(payload);
   }
 
   /// Looks up symbols by company name or ticker.

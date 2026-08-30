@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../api/yahoo.dart';
@@ -8,6 +7,7 @@ import '../models/types.dart';
 import '../state/alerts.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
+import '../utils/chart.dart';
 import '../utils/format.dart';
 import '../utils/indicators.dart';
 import '../widgets/alert_sheet.dart';
@@ -29,12 +29,19 @@ class _DetailScreenState extends State<DetailScreen> {
   /// closes it.
   late final YahooApi _api = context.read<YahooApi>();
 
-  RangeKey _range = RangeKey.d1;
   History? _history;
   bool _loading = true;
   String? _error;
   Candle? _scrubbed;
   ChartStyle _style = ChartStyle.candles;
+
+  /// Days on screen. Zooming changes this; one candle is always one day.
+  static const _defaultBars = 90;
+  ChartWindow _window = const ChartWindow(start: 0, count: _defaultBars);
+
+  /// True while a pinch, pan or scrub owns the chart, so the page underneath
+  /// stops scrolling and the gesture is not stolen mid-move.
+  bool _interacting = false;
 
   /// Indicators for the loaded range, recomputed only when the series changes
   /// rather than on every layout pass.
@@ -72,11 +79,7 @@ class _DetailScreenState extends State<DetailScreen> {
     });
 
     try {
-      final result = await _api.fetchHistory(
-        widget.symbol,
-        _range,
-        token: token,
-      );
+      final result = await _api.fetchHistory(widget.symbol, token: token);
       if (token.isCancelled || !mounted) return;
       // Computed once per load rather than per layout pass: a 100 SMA over a
       // few hundred bars is cheap, but the chart relays out on every scrub.
@@ -88,6 +91,15 @@ class _DetailScreenState extends State<DetailScreen> {
             period: simpleMovingAverage(closes, period),
         };
         _rsi = relativeStrengthIndex(closes, rsiPeriod);
+        // Open on the most recent bars; the clamp in the chart trims this to
+        // whatever the screen can actually hold.
+        _window = ChartWindow(
+          start: (result.candles.length - _defaultBars).clamp(
+            0,
+            result.candles.length,
+          ),
+          count: _defaultBars,
+        );
       });
     } catch (err) {
       if (token.isCancelled || !mounted) return;
@@ -104,44 +116,55 @@ class _DetailScreenState extends State<DetailScreen> {
     }
   }
 
-  void _selectRange(RangeKey next) {
-    if (next == _range) return;
-    HapticFeedback.selectionClick();
-    setState(() => _range = next);
-    _load();
+  /// Most bars the chart can show at this width. The chart clamps to this
+  /// itself when it lays out; this mirror keeps the zoom buttons and the day
+  /// count in step without plumbing the width back up.
+  int get _maxBarsOnScreen =>
+      maxCandlesFor(MediaQuery.of(context).size.width - 32);
+
+  /// The bars currently on screen, or empty before history lands.
+  List<Candle> get _visible {
+    final history = _history;
+    if (history == null) return const [];
+    final w = _window.clampTo(
+      total: history.candles.length,
+      maxBars: _maxBarsOnScreen,
+    );
+    if (w.count <= 0) return const [];
+    return history.candles.sublist(w.start, w.end);
   }
 
-  /// While scrubbing, the header reports the point under the finger; otherwise
-  /// it reports the latest price for the selected range.
-  _Headline? _buildHeadline(Quote? quote) {
-    final history = _history;
-    if (history == null) return null;
+  /// While scrubbing, the header reports the bar under the finger; otherwise
+  /// it reports the move across the visible window, so zooming changes what
+  /// the percentage is measured over.
+  _Headline? _buildHeadline() {
+    final visible = _visible;
+    if (visible.isEmpty) return null;
+
+    final baseline = visible.first.open;
 
     final scrubbed = _scrubbed;
     if (scrubbed != null) {
-      final change = scrubbed.close - history.first;
+      final change = scrubbed.close - baseline;
       return _Headline(
         price: scrubbed.close,
         change: change,
-        changePercent: history.first != 0 ? (change / history.first) * 100 : 0,
-        caption: formatPointDate(scrubbed.t, _range.intraday),
+        changePercent: baseline != 0 ? (change / baseline) * 100 : 0,
+        caption: formatPointDate(scrubbed.t, false),
         candle: scrubbed,
       );
     }
 
-    final String caption;
-    if (_range == RangeKey.d1) {
-      final state = describeMarketState(quote?.marketState ?? '');
-      caption = state.isNotEmpty ? state : 'Today';
-    } else {
-      caption = 'Past ${_range.longLabel}';
-    }
-
+    final last = visible.last.close;
+    final change = last - baseline;
     return _Headline(
-      price: history.last,
-      change: history.change,
-      changePercent: history.changePercent,
-      caption: caption,
+      price: last,
+      change: change,
+      changePercent: baseline != 0 ? (change / baseline) * 100 : 0,
+      caption:
+          '${visible.length} days · '
+          '${formatPointDate(visible.first.t, false)} – '
+          '${formatPointDate(visible.last.t, false)}',
     );
   }
 
@@ -152,7 +175,7 @@ class _DetailScreenState extends State<DetailScreen> {
 
     final quote = model.quotes[widget.symbol];
     final onWatchlist = model.has(widget.symbol);
-    final headline = _buildHeadline(quote);
+    final headline = _buildHeadline();
     final currency = _history?.currency ?? quote?.currency ?? 'USD';
     final color = c.trend(headline?.change ?? 0);
 
@@ -161,9 +184,9 @@ class _DetailScreenState extends State<DetailScreen> {
       body: SingleChildScrollView(
         // A vertical scroll must not fight the chart's horizontal scrub
         // gesture, so scrolling is suspended while a finger is on the chart.
-        physics: _scrubbed == null
-            ? const AlwaysScrollableScrollPhysics()
-            : const NeverScrollableScrollPhysics(),
+        physics: _interacting
+            ? const NeverScrollableScrollPhysics()
+            : const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -221,7 +244,7 @@ class _DetailScreenState extends State<DetailScreen> {
             const SizedBox(height: 14),
             Row(
               children: [
-                Expanded(child: _rangePicker(color)),
+                Expanded(child: _zoomControls()),
                 _styleToggle(),
               ],
             ),
@@ -229,7 +252,7 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(height: 6),
               _maLegend(),
               const SizedBox(height: 14),
-              RsiPane(values: _rsi, aggregate: _style == ChartStyle.candles),
+              RsiPane(values: _rsi, window: _window),
             ],
             if (quote != null) ...[
               const SizedBox(height: 20),
@@ -295,6 +318,11 @@ class _DetailScreenState extends State<DetailScreen> {
           candles: history.candles,
           color: color,
           style: _style,
+          window: _window,
+          onWindowChanged: (w) => setState(() => _window = w),
+          onInteractingChanged: (v) {
+            if (v != _interacting) setState(() => _interacting = v);
+          },
           overlays: [
             for (var i = 0; i < maPeriods.length; i++)
               if (_visibleMas.contains(maPeriods[i]) &&
@@ -305,7 +333,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   values: _mas[maPeriods[i]]!,
                 ),
           ],
-          baseline: history.first,
+          baseline: _visible.isEmpty ? null : _visible.first.open,
           onScrub: (candle) => setState(() => _scrubbed = candle),
         ),
         // Keep the old chart on screen while a new range loads.
@@ -337,89 +365,47 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 
-  Widget _rangePicker(Color color) {
+  /// Zoom buttons alongside the pinch gesture: a phone pinch is fiddly for
+  /// fine adjustment, and this also gives the feature a discoverable, and
+  /// keyboard- and screen-reader-reachable, control.
+  Widget _zoomControls() {
     final c = context.colors;
+    final total = _history?.candles.length ?? 0;
+    final visible = _visible.length;
+
+    void zoom(double factor) {
+      setState(() {
+        _window = _window
+            .zoomed(factor)
+            .clampTo(total: total, maxBars: _maxBarsOnScreen);
+      });
+    }
 
     return Row(
       children: [
-        for (final r in RangeKey.values)
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 2),
-              child: Semantics(
-                button: true,
-                selected: r == _range,
-                label: 'Show ${r.longLabel}',
-                child: Material(
-                  color: r == _range
-                      ? color.withValues(alpha: 0.13)
-                      : Colors.transparent,
-                  borderRadius: BorderRadius.circular(9),
-                  child: InkWell(
-                    onTap: () => _selectRange(r),
-                    borderRadius: BorderRadius.circular(9),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        r.label,
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: r == _range ? color : c.textMuted,
-                          fontSize: 14,
-                          fontWeight: r == _range
-                              ? FontWeight.w700
-                              : FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _alertsSection(String currency, double? price) {
-    final c = context.colors;
-    final alerts = context.watch<AlertsModel>().forSymbol(widget.symbol);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'Price alerts',
-              style: TextStyle(
-                color: c.text,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            TextButton.icon(
-              onPressed: () => AlertSheet.show(
-                context,
-                symbol: widget.symbol,
-                currency: currency,
-                currentPrice: price,
-              ),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add'),
-              style: TextButton.styleFrom(foregroundColor: c.accent),
-            ),
-          ],
+        IconButton(
+          onPressed: total == 0 || visible <= ChartWindow.minBars
+              ? null
+              : () => zoom(1.5),
+          icon: const Icon(Icons.zoom_in),
+          tooltip: 'Zoom in, fewer days',
+          visualDensity: VisualDensity.compact,
+          color: c.textMuted,
         ),
-        if (alerts.isEmpty)
+        IconButton(
+          onPressed: total == 0 || visible >= total
+              ? null
+              : () => zoom(1 / 1.5),
+          icon: const Icon(Icons.zoom_out),
+          tooltip: 'Zoom out, more days',
+          visualDensity: VisualDensity.compact,
+          color: c.textMuted,
+        ),
+        if (visible > 0)
           Text(
-            'None yet. Add one to be notified when ${widget.symbol} crosses a '
-            'price you choose.',
-            style: TextStyle(color: c.textMuted, fontSize: 13, height: 1.4),
-          )
-        else
-          for (final alert in alerts) _AlertRow(alert: alert),
+            '$visible days',
+            style: TextStyle(color: c.textFaint, fontSize: 12),
+          ),
       ],
     );
   }
@@ -499,6 +485,49 @@ class _DetailScreenState extends State<DetailScreen> {
               );
             },
           ),
+      ],
+    );
+  }
+
+  Widget _alertsSection(String currency, double? price) {
+    final c = context.colors;
+    final alerts = context.watch<AlertsModel>().forSymbol(widget.symbol);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Price alerts',
+              style: TextStyle(
+                color: c.text,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => AlertSheet.show(
+                context,
+                symbol: widget.symbol,
+                currency: currency,
+                currentPrice: price,
+              ),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add'),
+              style: TextButton.styleFrom(foregroundColor: c.accent),
+            ),
+          ],
+        ),
+        if (alerts.isEmpty)
+          Text(
+            'None yet. Add one to be notified when ${widget.symbol} crosses a '
+            'price you choose.',
+            style: TextStyle(color: c.textMuted, fontSize: 13, height: 1.4),
+          )
+        else
+          for (final alert in alerts) _AlertRow(alert: alert),
       ],
     );
   }

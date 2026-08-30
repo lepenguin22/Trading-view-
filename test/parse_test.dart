@@ -84,34 +84,30 @@ void main() {
   });
 
   group('parseHistory', () {
-    test(
-      'measures a 1D range against the previous close, not the first tick',
-      () {
-        // chartPreviousClose is 194, the first tick is 194.2 — an overnight gap
-        // that must not be swallowed.
-        final h = parseHistory(chart1d, RangeKey.d1);
-        expect(h.first, 194);
-        expect(h.last, 196.5);
-        expect(h.change, closeTo(2.5, 1e-10));
-      },
-    );
+    test('carries the daily bars, symbol and currency', () {
+      final h = parseHistory(chart1d);
+      expect(h.symbol, 'AAPL');
+      expect(h.currency, 'USD');
+      // Five timestamps with one null gap across every series.
+      expect(h.candles, hasLength(4));
+      expect(h.candles.first.open, 194.0);
+      expect(h.candles.last.close, 196.5);
+    });
 
-    test('measures a longer range against the first close in the range', () {
-      final h = parseHistory(chart1y, RangeKey.y1);
+    test('exposes closes for the indicators and the line view', () {
+      expect(parseHistory(chart1d).closes, [194.2, 195.0, 195.8, 196.5]);
+    });
+
+    test('reads a non-USD series without rescaling it', () {
+      final h = parseHistory(chart1y);
       expect(h.symbol, 'VOD.L');
       expect(h.currency, 'GBp');
-      expect(h.first, 70);
-      expect(h.last, 78.4);
-      expect(h.change, closeTo(8.4, 1e-10));
-      expect(h.changePercent, closeTo((8.4 / 70) * 100, 1e-10));
       expect(h.candles, hasLength(3));
+      expect(h.closes, [70.0, 74.0, 78.4]);
     });
 
     test('raises rather than returning an empty chart', () {
-      expect(
-        () => parseHistory(chartEmpty, RangeKey.m1),
-        throwsA(isA<FeedException>()),
-      );
+      expect(() => parseHistory(chartEmpty), throwsA(isA<FeedException>()));
     });
   });
 

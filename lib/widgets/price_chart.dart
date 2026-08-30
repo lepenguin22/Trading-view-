@@ -44,17 +44,28 @@ class PriceChart extends StatefulWidget {
     super.key,
     required this.candles,
     required this.color,
+    required this.window,
+    required this.onWindowChanged,
     this.style = ChartStyle.candles,
     this.overlays = const [],
     this.height = _defaultHeight,
     this.baseline,
     this.onScrub,
+    this.onInteractingChanged,
   });
 
+  /// The whole fetched daily series. The window decides what is drawn.
   final List<Candle> candles;
 
   /// Trend colour, used for the line view and the baseline-relative tinting.
   final Color color;
+
+  /// The visible slice, owned by the screen so the header and the RSI pane
+  /// stay in step with the chart.
+  final ChartWindow window;
+
+  /// Fires with a new window as the user pinches or pans.
+  final ValueChanged<ChartWindow> onWindowChanged;
   final ChartStyle style;
 
   /// Moving averages drawn on top of the price series.
@@ -65,10 +76,12 @@ class PriceChart extends StatefulWidget {
   /// Price level the range's change is measured from, drawn as a dashed rule.
   final double? baseline;
 
-  /// Fires with the candle under the finger, or null when it lifts. The
-  /// candle is the aggregated one actually on screen, so the header reports
-  /// what the user is pointing at.
+  /// Fires with the candle under the finger, or null when it lifts.
   final ValueChanged<Candle?>? onScrub;
+
+  /// Fires true while a gesture owns the chart, so the page can stop
+  /// scrolling underneath it.
+  final ValueChanged<bool>? onInteractingChanged;
 
   @override
   State<PriceChart> createState() => _PriceChartState();
@@ -78,6 +91,55 @@ class _PriceChartState extends State<PriceChart> {
   int? _scrubIndex;
   List<double> _xs = const [];
   List<Candle> _drawn = const [];
+  double _width = 0;
+
+  /// Window and accumulated pan at the moment a pinch began. Zoom is applied
+  /// against this rather than the live window, so rounding does not compound
+  /// over the dozens of updates a single pinch delivers.
+  ChartWindow? _gestureStart;
+  double _panRemainder = 0;
+
+  int get _maxBars => maxCandlesFor(_width);
+
+  void _emit(ChartWindow next) {
+    final clamped = next.clampTo(
+      total: widget.candles.length,
+      maxBars: _maxBars,
+    );
+    if (clamped != widget.window) widget.onWindowChanged(clamped);
+  }
+
+  void _onScaleStart(ScaleStartDetails details) {
+    _gestureStart = widget.window;
+    _panRemainder = 0;
+    widget.onInteractingChanged?.call(true);
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    final base = _gestureStart;
+    if (base == null || _width <= 0) return;
+
+    if (details.scale != 1.0) {
+      final focal = (details.localFocalPoint.dx / _width).clamp(0.0, 1.0);
+      _emit(base.zoomed(details.scale, focal: focal));
+      return;
+    }
+
+    // A drag moves the chart with the finger: dragging right reveals older
+    // bars, so the window start decreases.
+    final barsPerPixel = widget.window.count / _width;
+    _panRemainder -= details.focalPointDelta.dx * barsPerPixel;
+    final whole = _panRemainder.truncate();
+    if (whole != 0) {
+      _panRemainder -= whole;
+      _emit(widget.window.panned(whole));
+    }
+  }
+
+  void _onScaleEnd(ScaleEndDetails details) {
+    _gestureStart = null;
+    widget.onInteractingChanged?.call(false);
+  }
 
   void _handleTouch(double x) {
     if (_xs.isEmpty) return;
@@ -91,6 +153,7 @@ class _PriceChartState extends State<PriceChart> {
     if (_scrubIndex == null) return;
     setState(() => _scrubIndex = null);
     widget.onScrub?.call(null);
+    widget.onInteractingChanged?.call(false);
   }
 
   @override
@@ -109,31 +172,40 @@ class _PriceChartState extends State<PriceChart> {
     return Semantics(
       image: true,
       label: widget.style == ChartStyle.candles
-          ? 'Candlestick price chart. Drag across it to read individual bars.'
-          : 'Price chart. Drag across it to read individual prices.',
+          ? 'Daily candlestick chart. Pinch to zoom, drag to pan, '
+                'long press and drag to read individual bars.'
+          : 'Daily price chart. Pinch to zoom, drag to pan, long press and '
+                'drag to read individual prices.',
       child: SizedBox(
         height: widget.height,
         width: double.infinity,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final width = constraints.maxWidth;
+            _width = width;
 
-            // Thin the series to what actually fits before drawing, so a long
-            // range shows readable bars instead of a solid block.
-            final bucketSize = widget.style == ChartStyle.candles
-                ? bucketSizeFor(widget.candles.length, maxCandlesFor(width))
-                : 1;
-            _drawn = bucketSize > 1
-                ? aggregateCandles(widget.candles, maxCandlesFor(width))
-                : widget.candles;
+            // The window is the whole story now: one candle is one day, and
+            // zooming changes how many days are on screen, never what a bar
+            // means.
+            final window = widget.window.clampTo(
+              total: widget.candles.length,
+              maxBars: maxCandlesFor(width),
+            );
+            _drawn = window.count <= 0
+                ? const []
+                : widget.candles.sublist(window.start, window.end);
 
-            // Indicators are computed on the raw bars, so they are sampled
-            // with the same buckets rather than recomputed on merged ones.
+            // Indicators are computed over the full series, so slicing to the
+            // window keeps a 20 SMA correct at the left edge — it still uses
+            // the bars before the window, which is why they are not
+            // recomputed on the slice.
             final overlays = [
               for (final overlay in widget.overlays)
                 (
                   color: overlay.color,
-                  values: sampleBuckets(overlay.values, bucketSize),
+                  values: overlay.values.length >= window.end
+                      ? overlay.values.sublist(window.start, window.end)
+                      : const <double?>[],
                 ),
             ];
 
@@ -178,16 +250,19 @@ class _PriceChartState extends State<PriceChart> {
 
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
-              // Claiming the horizontal drag stops the enclosing scroll view
-              // from stealing the gesture mid-scrub; a vertical drag still
-              // scrolls the page.
-              onHorizontalDragStart: (d) => _handleTouch(d.localPosition.dx),
-              onHorizontalDragUpdate: (d) => _handleTouch(d.localPosition.dx),
-              onHorizontalDragEnd: (_) => _endScrub(),
-              onHorizontalDragCancel: _endScrub,
-              onTapDown: (d) => _handleTouch(d.localPosition.dx),
-              onTapUp: (_) => _endScrub(),
-              onTapCancel: _endScrub,
+              // Scale covers both pinch and drag. Scrubbing is on long press
+              // instead, so a plain drag pans the chart the way it does in
+              // every trading app rather than fighting the crosshair.
+              onScaleStart: _onScaleStart,
+              onScaleUpdate: _onScaleUpdate,
+              onScaleEnd: _onScaleEnd,
+              onLongPressStart: (d) {
+                widget.onInteractingChanged?.call(true);
+                _handleTouch(d.localPosition.dx);
+              },
+              onLongPressMoveUpdate: (d) => _handleTouch(d.localPosition.dx),
+              onLongPressEnd: (_) => _endScrub(),
+              onLongPressCancel: _endScrub,
               child: CustomPaint(
                 size: Size(width, widget.height),
                 painter: painter,

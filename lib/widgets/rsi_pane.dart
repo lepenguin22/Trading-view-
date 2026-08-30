@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../models/types.dart';
 import '../theme/app_theme.dart';
-import '../utils/chart.dart';
 import '../utils/indicators.dart';
 
 const _paneHeight = 64.0;
@@ -16,24 +15,26 @@ class RsiPane extends StatelessWidget {
   const RsiPane({
     super.key,
     required this.values,
-    required this.aggregate,
+    required this.window,
     this.height = _paneHeight,
   });
 
   /// Aligned to the raw candles, with null before the indicator warms up.
   final List<double?> values;
 
-  /// Whether the price chart above is aggregating. This pane is the same
-  /// width, so recomputing the bucket size here lands on the same value and
-  /// the two plots stay aligned bar for bar.
-  final bool aggregate;
+  /// The same slice the price chart is drawing, so the two plots stay aligned
+  /// bar for bar as the user zooms and pans.
+  final ChartWindow window;
 
   final double height;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final latest = values.lastWhere((v) => v != null, orElse: () => null);
+    final visible = values.length >= window.end && window.count > 0
+        ? values.sublist(window.start, window.end)
+        : const <double?>[];
+    final latest = visible.lastWhere((v) => v != null, orElse: () => null);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -74,15 +75,7 @@ class RsiPane extends StatelessWidget {
             builder: (context, constraints) => CustomPaint(
               size: Size(constraints.maxWidth, height),
               painter: _RsiPainter(
-                values: sampleBuckets(
-                  values,
-                  aggregate
-                      ? bucketSizeFor(
-                          values.length,
-                          maxCandlesFor(constraints.maxWidth),
-                        )
-                      : 1,
-                ),
+                values: visible,
                 line: c.accent,
                 guide: c.border,
                 guideText: c.textFaint,

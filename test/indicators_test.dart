@@ -127,53 +127,97 @@ void main() {
     });
   });
 
-  group('sampleBuckets', () {
-    test('is a no-op when nothing is aggregated', () {
-      final source = <double?>[1, 2, 3];
-      expect(sampleBuckets(source, 1), same(source));
+  group('ChartWindow', () {
+    test('clamps the count to the series and the screen limit', () {
+      // Asking for more bars than exist settles on the whole series.
+      final w = const ChartWindow(
+        start: 0,
+        count: 500,
+      ).clampTo(total: 120, maxBars: 300);
+      expect(w.count, 120);
+      expect(w.start, 0);
+
+      // Asking for more than fit settles on what fits.
+      final tight = const ChartWindow(
+        start: 0,
+        count: 500,
+      ).clampTo(total: 1000, maxBars: 200);
+      expect(tight.count, 200);
     });
 
-    test('takes each bucket final value, aligning with the bucket close', () {
-      // The indicator value drawn on a merged bar must be the one at that
-      // bar's closing tick, not its first.
-      expect(sampleBuckets<double?>([1, 2, 3, 4, 5, 6], 2), [2, 4, 6]);
-      expect(sampleBuckets<double?>([1, 2, 3, 4, 5], 2), [2, 4, 5]);
+    test('never zooms in below the floor', () {
+      final w = const ChartWindow(
+        start: 0,
+        count: 1,
+      ).clampTo(total: 500, maxBars: 300);
+      expect(w.count, ChartWindow.minBars);
     });
 
-    test('carries nulls through from the warm-up region', () {
-      expect(sampleBuckets<double?>([null, null, 3, 4], 2), [null, 4]);
-    });
-  });
-
-  group('bucketSizeFor', () {
-    test('is one when the series already fits', () {
-      expect(bucketSizeFor(10, 20), 1);
-      expect(bucketSizeFor(20, 20), 1);
-    });
-
-    test('rounds up so the bucket count never exceeds the limit', () {
-      expect(bucketSizeFor(100, 7), 15);
-      expect((100 / 15).ceil(), lessThanOrEqualTo(7));
+    test('slides a window panned past the end back into range', () {
+      // The count survives; only the start moves. A window that shrank here
+      // would make panning to the edge silently zoom in.
+      final w = const ChartWindow(
+        start: 400,
+        count: 90,
+      ).clampTo(total: 300, maxBars: 300);
+      expect(w.count, 90);
+      expect(w.end, 300);
+      expect(w.start, 210);
     });
 
-    test('is one for degenerate inputs', () {
-      expect(bucketSizeFor(0, 10), 1);
-      expect(bucketSizeFor(10, 0), 1);
+    test('cannot pan before the first bar', () {
+      final w = const ChartWindow(
+        start: 10,
+        count: 50,
+      ).panned(-999).clampTo(total: 300, maxBars: 300);
+      expect(w.start, 0);
+      expect(w.count, 50);
     });
 
-    test('agrees with what aggregateCandles actually produces', () {
-      final candles = [
-        for (var i = 0; i < 137; i++)
-          Candle(t: i, open: 1, high: 2, low: 0, close: 1),
-      ];
-      const maxCount = 40;
-      final merged = aggregateCandles(candles, maxCount);
-      final size = bucketSizeFor(candles.length, maxCount);
-      // The indicator sampler must produce exactly one value per drawn bar.
-      expect(
-        sampleBuckets<double?>(List.filled(candles.length, 1), size),
-        hasLength(merged.length),
-      );
+    test('is empty for an empty series', () {
+      final w = const ChartWindow(
+        start: 0,
+        count: 90,
+      ).clampTo(total: 0, maxBars: 300);
+      expect(w.count, 0);
+      expect(w.start, 0);
+    });
+
+    test('zooming in shows fewer bars, out shows more', () {
+      const w = ChartWindow(start: 100, count: 90);
+      expect(w.zoomed(2).count, 45);
+      expect(w.zoomed(0.5).count, 180);
+    });
+
+    test('zoom keeps the bar under the focal point in place', () {
+      // Pinching on the right edge must not drag the chart leftwards.
+      const w = ChartWindow(start: 100, count: 100);
+
+      final right = w.zoomed(2, focal: 1.0);
+      expect(right.end, w.end);
+
+      final left = w.zoomed(2, focal: 0.0);
+      expect(left.start, w.start);
+
+      final middle = w.zoomed(2, focal: 0.5);
+      expect(middle.start + middle.count / 2, w.start + w.count / 2);
+    });
+
+    test('ignores a degenerate zoom factor', () {
+      const w = ChartWindow(start: 0, count: 50);
+      expect(w.zoomed(0), w);
+      expect(w.zoomed(-1), w);
+      expect(w.zoomed(double.nan), w);
+    });
+
+    test('panning then clamping round-trips within the series', () {
+      var w = const ChartWindow(start: 0, count: 60);
+      for (final delta in [30, -10, 500, -500, 7]) {
+        w = w.panned(delta).clampTo(total: 250, maxBars: 250);
+        expect(w.start, greaterThanOrEqualTo(0));
+        expect(w.end, lessThanOrEqualTo(250));
+        expect(w.count, 60);
+      }
     });
   });
 }

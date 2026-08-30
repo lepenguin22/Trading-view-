@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ticker/api/yahoo.dart';
 import 'package:ticker/main.dart';
 import 'package:ticker/state/alerts.dart';
+import 'package:ticker/models/types.dart';
 import 'package:ticker/widgets/price_chart.dart';
 
 import 'helpers.dart';
@@ -127,8 +128,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Remove from watchlist'), findsOneWidget);
-    // The range picker only exists on the detail screen.
-    expect(find.text('5Y'), findsOneWidget);
+    // The zoom controls only exist on the detail screen.
+    expect(find.byTooltip('Zoom in, fewer days'), findsOneWidget);
 
     await teardown(tester);
   });
@@ -271,23 +272,25 @@ void main() {
     await teardown(tester);
   });
 
-  testWidgets('scrubbing the chart reveals the bar OHLC', (tester) async {
+  testWidgets('long pressing the chart reveals the bar OHLC', (tester) async {
     await tester.pumpWidget(appWith(respondingWith(chart1d)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
 
-    // Nothing scrubbed yet, so the header shows the range caption instead.
+    // Nothing scrubbed yet, so the header shows the window caption instead.
     expect(find.text('O '), findsNothing);
 
-    final chart = find.byType(PriceChart);
-    final centre = tester.getCenter(chart);
+    // A plain drag now pans, so the crosshair is behind a long press.
+    final centre = tester.getCenter(find.byType(PriceChart));
     final gesture = await tester.startGesture(centre);
-    await gesture.moveBy(const Offset(20, 0));
+    // Past the long-press threshold, so the crosshair takes the gesture
+    // rather than the pan.
+    await tester.pump(const Duration(milliseconds: 600));
+    await gesture.moveBy(const Offset(12, 0));
     await tester.pumpAndSettle();
 
-    // The O/H/L/C strip replaces the caption while a finger is down.
     expect(find.text('O '), findsOneWidget);
     expect(find.text('H '), findsOneWidget);
     expect(find.text('L '), findsOneWidget);
@@ -392,6 +395,91 @@ void main() {
     await tester.tap(find.text('MA50'));
     await tester.pumpAndSettle();
     expect(chartWidget().overlays, hasLength(3));
+
+    await teardown(tester);
+  });
+
+  testWidgets('opens on the most recent bars, not the whole series', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+    // 90 days by default, anchored to the newest bar.
+    expect(chart.window.count, 90);
+    expect(chart.window.end, 400);
+    expect(find.text('90 days'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the zoom buttons change how many days are shown', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    int visible() =>
+        tester.widget<PriceChart>(find.byType(PriceChart)).window.count;
+    expect(visible(), 90);
+
+    await tester.tap(find.byTooltip('Zoom in, fewer days'));
+    await tester.pumpAndSettle();
+    expect(visible(), lessThan(90));
+
+    final zoomedIn = visible();
+    await tester.tap(find.byTooltip('Zoom out, more days'));
+    await tester.pumpAndSettle();
+    expect(visible(), greaterThan(zoomedIn));
+
+    await teardown(tester);
+  });
+
+  testWidgets('dragging pans through history without changing the zoom', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    ChartWindow window() =>
+        tester.widget<PriceChart>(find.byType(PriceChart)).window;
+    final before = window();
+
+    // Dragging right pulls older bars into view.
+    await tester.drag(find.byType(PriceChart), const Offset(120, 0));
+    await tester.pumpAndSettle();
+
+    expect(window().start, lessThan(before.start));
+    expect(window().count, before.count, reason: 'panning must not zoom');
+
+    await teardown(tester);
+  });
+
+  testWidgets('cannot pan past the start of the series', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(150))));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    for (var i = 0; i < 8; i++) {
+      await tester.drag(find.byType(PriceChart), const Offset(300, 0));
+      await tester.pumpAndSettle();
+    }
+
+    final window = tester.widget<PriceChart>(find.byType(PriceChart)).window;
+    expect(window.start, 0);
+    expect(window.count, 90);
 
     await teardown(tester);
   });

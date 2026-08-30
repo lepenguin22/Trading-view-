@@ -67,65 +67,6 @@ class Candle {
   String toString() => 'Candle($t, o:$open h:$high l:$low c:$close)';
 }
 
-/// Number of raw bars merged into each drawn bar.
-///
-/// Shared by [aggregateCandles] and [sampleBuckets] so an indicator computed
-/// on raw bars lines up with the aggregated candles it is drawn over.
-int bucketSizeFor(int length, int maxCount) {
-  if (maxCount <= 0 || length <= 0 || length <= maxCount) return 1;
-  // Round up so the bucket count never exceeds maxCount.
-  return (length + maxCount - 1) ~/ maxCount;
-}
-
-/// Samples a raw-aligned series at each bucket's final bar.
-///
-/// Indicators are computed on the raw series — a "20 SMA" must mean 20 bars of
-/// the range's own interval, not 20 merged bars, or the line would change
-/// meaning with the width of the screen. Taking each bucket's last value lines
-/// the indicator up with that bucket's close.
-List<T?> sampleBuckets<T>(List<T?> source, int bucketSize) {
-  if (bucketSize <= 1) return source;
-  return [
-    for (var start = 0; start < source.length; start += bucketSize)
-      source[(start + bucketSize).clamp(0, source.length) - 1],
-  ];
-}
-
-/// Aggregates [candles] into at most [maxCount] bars.
-///
-/// A phone is only a few hundred pixels wide, so a 5Y weekly series drawn one
-/// bar per point is an unreadable smear. Merging adjacent bars is the same
-/// operation as moving to a coarser timeframe: the bucket opens where the
-/// first bar opened, closes where the last one closed, and spans the extremes
-/// in between.
-List<Candle> aggregateCandles(List<Candle> candles, int maxCount) {
-  if (maxCount <= 0) return const [];
-  if (candles.length <= maxCount) return candles;
-
-  final bucketSize = bucketSizeFor(candles.length, maxCount);
-
-  final out = <Candle>[];
-  for (var start = 0; start < candles.length; start += bucketSize) {
-    final end = (start + bucketSize).clamp(0, candles.length);
-    var high = candles[start].high;
-    var low = candles[start].low;
-    for (var i = start + 1; i < end; i++) {
-      if (candles[i].high > high) high = candles[i].high;
-      if (candles[i].low < low) low = candles[i].low;
-    }
-    out.add(
-      Candle(
-        t: candles[start].t,
-        open: candles[start].open,
-        high: high,
-        low: low,
-        close: candles[end - 1].close,
-      ),
-    );
-  }
-  return out;
-}
-
 /// Everything the UI needs to render one row of the watchlist.
 class Quote {
   const Quote({
@@ -205,34 +146,26 @@ class Quote {
   };
 }
 
-/// A price history series for the detail screen chart.
+/// Daily price history for the detail screen chart.
+///
+/// One candle is one trading day, always. The visible span is chosen by
+/// zooming rather than by picking a range, so this carries the whole fetched
+/// series and the UI decides what slice to draw.
 class History {
   const History({
     required this.symbol,
-    required this.range,
     required this.candles,
     required this.currency,
-    required this.first,
-    required this.last,
-    required this.change,
-    required this.changePercent,
   });
 
   final String symbol;
-  final RangeKey range;
 
-  /// Full OHLC bars. The line chart reads [closes] from these.
+  /// Daily OHLC bars, oldest first.
   final List<Candle> candles;
   final String currency;
 
-  /// Closing prices, for the line view and any close-based geometry.
+  /// Closing prices, for the line view and the indicators.
   List<double> get closes => [for (final c in candles) c.close];
-
-  /// Baseline the range's change is measured against.
-  final double first;
-  final double last;
-  final double change;
-  final double changePercent;
 }
 
 /// A symbol search hit.
@@ -252,32 +185,63 @@ class SearchResult {
   final String type;
 }
 
-/// The ranges offered on the detail screen, with the upstream range/interval
-/// pair each one maps to. Intervals are chosen to keep every series in the low
-/// hundreds of points, which is plenty for a phone-width chart.
-enum RangeKey {
-  d1('1D', '1d', '5m', 'day'),
-  w1('1W', '5d', '30m', 'week'),
-  m1('1M', '1mo', '1d', 'month'),
-  m3('3M', '3mo', '1d', '3 months'),
-  y1('1Y', '1y', '1d', 'year'),
-  y5('5Y', '5y', '1wk', '5 years');
+/// The slice of a daily series currently on screen.
+///
+/// Pure and clamped, so the zoom and pan gestures cannot walk the view off the
+/// end of the data or collapse it to nothing.
+class ChartWindow {
+  const ChartWindow({required this.start, required this.count});
 
-  const RangeKey(this.label, this.range, this.interval, this.longLabel);
+  /// Index of the leftmost visible bar.
+  final int start;
 
-  /// Button label, e.g. "1D".
-  final String label;
+  /// How many bars are visible.
+  final int count;
 
-  /// Upstream `range` parameter.
-  final String range;
+  int get end => start + count;
 
-  /// Upstream `interval` parameter.
-  final String interval;
+  /// Fewest bars the chart will show, so zooming in cannot leave one candle
+  /// filling the screen.
+  static const minBars = 12;
 
-  /// Prose form for captions and accessibility, e.g. "3 months".
-  final String longLabel;
+  /// Clamps this window to a series of [total] bars, showing at most
+  /// [maxBars]. The count settles first, then the start, so a window that has
+  /// been panned past the end slides back rather than shrinking.
+  ChartWindow clampTo({required int total, required int maxBars}) {
+    if (total <= 0) return const ChartWindow(start: 0, count: 0);
 
-  /// True where points are finer than one a day, which changes how their
-  /// timestamps are labelled.
-  bool get intraday => this == RangeKey.d1 || this == RangeKey.w1;
+    final upper = maxBars < minBars ? minBars : maxBars;
+    var nextCount = count.clamp(minBars, upper);
+    if (nextCount > total) nextCount = total;
+
+    final nextStart = start.clamp(0, total - nextCount);
+    return ChartWindow(start: nextStart, count: nextCount);
+  }
+
+  /// Zooms by [factor] (>1 zooms in) about [focal], a 0..1 position across the
+  /// visible width. Anchoring on the focal point is what makes a pinch feel
+  /// like it is scaling the chart under the fingers rather than the left edge.
+  ChartWindow zoomed(double factor, {double focal = 0.5}) {
+    if (!factor.isFinite || factor <= 0) return this;
+
+    final nextCount = (count / factor).round().clamp(1, 1 << 30);
+    // The bar under the focal point stays under it.
+    final anchor = start + focal * count;
+    final nextStart = (anchor - focal * nextCount).round();
+    return ChartWindow(start: nextStart, count: nextCount);
+  }
+
+  /// Slides the window by [bars]; positive moves toward newer data.
+  ChartWindow panned(int bars) =>
+      ChartWindow(start: start + bars, count: count);
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChartWindow && other.start == start && other.count == count;
+
+  @override
+  int get hashCode => Object.hash(start, count);
+
+  @override
+  String toString() => 'ChartWindow($start, $count)';
 }
