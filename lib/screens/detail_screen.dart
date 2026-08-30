@@ -81,7 +81,7 @@ class _DetailScreenState extends State<DetailScreen> {
     try {
       final result = await _api.fetchHistory(widget.symbol, token: token);
       if (token.isCancelled || !mounted) return;
-      // Computed once per load rather than per layout pass: a 100 SMA over a
+      // Computed once per load rather than per layout pass: a 200 SMA over a
       // few hundred bars is cheap, but the chart relays out on every scrub.
       final closes = result.closes;
       setState(() {

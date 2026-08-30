@@ -15,7 +15,7 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
   with a long press to read a bar's open, high, low and close. Plus previous
   close, day high/low and exchange. A line view is a tap away for reading the
   shape of a long span.
-- **Indicators** — 20, 50 and 100 simple moving averages overlaid on the price,
+- **Indicators** — 20, 50 and 200 simple moving averages overlaid on the price,
   each toggleable from the legend, and a 14-period RSI in its own pane.
 - **Import** — fill the Portfolio list from a spreadsheet published as CSV,
   rather than typing holdings one by one.
@@ -102,7 +102,7 @@ recomputed on the slice, so a 20 SMA is still correct at the left edge of the
 view: it uses the twenty days before it, which are off screen but not missing.
 
 **A period with too few bars reads `n/a` rather than disappearing.** A newly
-listed symbol with under 100 days of history cannot support MA100; the legend
+listed symbol with under 200 days of history cannot support MA200; the legend
 chip stays visible and greyed so it is clear the data is short rather than the
 line silently missing.
 
