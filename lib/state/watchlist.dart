@@ -7,22 +7,34 @@ import '../models/types.dart';
 import '../utils/format.dart';
 import 'storage.dart';
 
-/// What a portfolio import did, so the screen can report it precisely rather
-/// than claiming success over a partial result.
+/// What a portfolio import did.
+///
+/// An import mirrors the sheet, so it can remove as well as add. The screen
+/// reports both rather than a bare success, because a removal the user did not
+/// expect is the thing they most need to see.
 class ImportOutcome {
   const ImportOutcome({
     required this.added,
-    required this.alreadyPresent,
+    required this.removed,
+    required this.unchanged,
     required this.failed,
   });
 
+  /// In the sheet, not previously in the portfolio.
   final List<String> added;
-  final List<String> alreadyPresent;
 
-  /// Symbol to the reason the feed rejected it.
+  /// Previously in the portfolio, no longer in the sheet.
+  final List<String> removed;
+
+  final List<String> unchanged;
+
+  /// Symbol to the reason the price feed rejected it. These are still kept in
+  /// the portfolio — the sheet is the source of truth for what is held, and
+  /// dropping a holding because a request failed would be worse than showing
+  /// it with an error.
   final Map<String, String> failed;
 
-  bool get isEmpty => added.isEmpty && alreadyPresent.isEmpty && failed.isEmpty;
+  bool get changedNothing => added.isEmpty && removed.isEmpty;
 }
 
 /// How often the watchlist re-polls while the app is in the foreground.
@@ -46,6 +58,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   final WatchlistStorage _storage;
 
   List<String> _symbols = const [];
+  List<String> _portfolio = const [];
   Map<String, Quote> _quotes = const {};
   Map<String, String> _errors = const {};
   bool _hydrating = true;
@@ -65,6 +78,13 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   /// Watchlist order, as the user arranged it.
   List<String> get symbols => List.unmodifiable(_symbols);
 
+  /// Holdings imported from a spreadsheet, kept apart from the watchlist.
+  List<String> get portfolio => List.unmodifiable(_portfolio);
+
+  /// Every symbol needing a quote. Both lists are polled together and share
+  /// one quote map, so a symbol on both is fetched once.
+  List<String> get _tracked => {..._symbols, ..._portfolio}.toList();
+
   Map<String, Quote> get quotes => Map.unmodifiable(_quotes);
 
   /// Per-symbol failure messages from the last refresh.
@@ -80,6 +100,9 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
 
   bool has(String symbol) => _symbols.contains(normaliseSymbol(symbol));
 
+  bool isInPortfolio(String symbol) =>
+      _portfolio.contains(normaliseSymbol(symbol));
+
   /// Reads the persisted watchlist and cached quotes, then does a first
   /// refresh and starts polling.
   Future<void> start() async {
@@ -90,6 +113,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     if (_disposed) return;
 
     _symbols = saved;
+    _portfolio = await _storage.loadPortfolio();
     _quotes = cached;
     _hydrating = false;
     notifyListeners();
@@ -121,7 +145,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   /// in-flight refresh is abandoned rather than allowed to overwrite fresher
   /// data with staler.
   Future<void> refresh() async {
-    final list = List.of(_symbols);
+    final list = _tracked;
     if (list.isEmpty) {
       if (_errors.isNotEmpty) {
         _errors = const {};
@@ -204,72 +228,88 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Adds many symbols at once, verifying each against the feed first.
+  /// Replaces the portfolio with what the sheet says.
   ///
-  /// Every symbol is looked up before anything is committed, so a typo in a
-  /// spreadsheet becomes a reported failure rather than a dead row on the
-  /// watchlist. Symbols already on the list are left alone rather than
-  /// counted as failures — re-importing an unchanged sheet is a no-op.
-  Future<ImportOutcome> importSymbols(List<String> symbols) async {
-    final wanted = <String>[];
-    final alreadyPresent = <String>[];
+  /// This mirrors rather than merges: a holding sold and deleted from the
+  /// sheet disappears here on the next import. Only ever called with a sheet
+  /// that fetched and parsed successfully, so a network failure can never
+  /// empty the list.
+  ///
+  /// Symbols the price feed rejects are kept, not dropped. The sheet is the
+  /// authority on what is held, and removing a holding because one request
+  /// failed would be worse than showing it with an error; the failures are
+  /// reported so the sheet can be corrected.
+  Future<ImportOutcome> importPortfolio(List<String> symbols) async {
+    final next = <String>[];
     for (final raw in symbols) {
       final symbol = normaliseSymbol(raw);
-      if (symbol.isEmpty) continue;
-      if (_symbols.contains(symbol)) {
-        alreadyPresent.add(symbol);
-      } else if (!wanted.contains(symbol)) {
-        wanted.add(symbol);
-      }
+      if (symbol.isNotEmpty && !next.contains(symbol)) next.add(symbol);
     }
 
-    if (wanted.isEmpty) {
-      return ImportOutcome(
-        added: const [],
-        alreadyPresent: alreadyPresent,
-        failed: const {},
-      );
-    }
+    final previous = _portfolio;
+    final outcome = ImportOutcome(
+      added: [
+        for (final s in next)
+          if (!previous.contains(s)) s,
+      ],
+      removed: [
+        for (final s in previous)
+          if (!next.contains(s)) s,
+      ],
+      unchanged: [
+        for (final s in next)
+          if (previous.contains(s)) s,
+      ],
+      failed: const {},
+    );
 
-    // One fan-out rather than a fetch per symbol, the same path the watchlist
-    // refresh uses, so an import of twenty tickers is one burst instead of
-    // twenty sequential round trips.
-    final batch = await _api.fetchQuotes(wanted);
-    if (_disposed) {
-      return ImportOutcome(
-        added: const [],
-        alreadyPresent: alreadyPresent,
-        failed: const {},
-      );
-    }
+    _portfolio = next;
+    notifyListeners();
+    await _storage.savePortfolio(next);
 
-    final resolved = [for (final q in batch.quotes) q.symbol];
-    if (resolved.isNotEmpty) {
-      final next = Map.of(_quotes);
+    // Price whatever is not already known, so the rows fill in immediately
+    // rather than waiting for the next poll.
+    final unpriced = [
+      for (final s in next)
+        if (!_quotes.containsKey(s)) s,
+    ];
+    if (unpriced.isEmpty || _disposed) return outcome;
+
+    final batch = await _api.fetchQuotes(unpriced);
+    if (_disposed) return outcome;
+
+    if (batch.quotes.isNotEmpty) {
+      final quotes = Map.of(_quotes);
       for (final q in batch.quotes) {
-        next[q.symbol] = q;
+        quotes[q.symbol] = q;
       }
-      _quotes = next;
+      _quotes = quotes;
       _lastUpdated = DateTime.now().millisecondsSinceEpoch;
-      unawaited(_storage.saveCachedQuotes(next));
-      // Keep the sheet's order, which is usually the user's own ordering.
-      _persist([
-        ..._symbols,
-        ...[
-          for (final s in wanted)
-            if (resolved.contains(s)) s,
-        ],
-      ]);
+      unawaited(_storage.saveCachedQuotes(quotes));
     }
+    if (batch.errors.isNotEmpty) {
+      _errors = {..._errors, ...batch.errors};
+    }
+    notifyListeners();
 
     return ImportOutcome(
-      added: [
-        for (final s in wanted)
-          if (resolved.contains(s)) s,
-      ],
-      alreadyPresent: alreadyPresent,
+      added: outcome.added,
+      removed: outcome.removed,
+      unchanged: outcome.unchanged,
       failed: batch.errors,
     );
+  }
+
+  /// Drops one holding from the portfolio.
+  ///
+  /// A convenience for hiding something now; the sheet still decides, so it
+  /// returns on the next import unless it is deleted there too.
+  void removeFromPortfolio(String symbol) {
+    final next = _portfolio.where((s) => s != symbol).toList(growable: false);
+    if (next.length == _portfolio.length) return;
+    _portfolio = next;
+    notifyListeners();
+    unawaited(_storage.savePortfolio(next));
   }
 
   void removeSymbol(String symbol) {

@@ -6,6 +6,7 @@ import '../models/types.dart';
 
 const _symbolsKey = 'ticker.watchlist.symbols.v1';
 const _sheetUrlKey = 'ticker.portfolio.sheetUrl.v1';
+const _portfolioKey = 'ticker.portfolio.symbols.v1';
 const _quotesKey = 'ticker.watchlist.quotes.v1';
 
 /// Shown on first launch so the app is not an empty screen.
@@ -40,6 +41,32 @@ class WatchlistStorage {
       await (await _prefs).setString(_symbolsKey, jsonEncode(symbols));
     } catch (_) {
       // Ignore: the in-memory watchlist is still correct for this session.
+    }
+  }
+
+  /// The imported portfolio. Kept separate from the watchlist: one is what the
+  /// user chose to follow, the other is what a spreadsheet says they own, and
+  /// an import rewrites the second without touching the first.
+  Future<List<String>> loadPortfolio() async {
+    try {
+      final raw = (await _prefs).getString(_portfolioKey);
+      if (raw == null) return const [];
+      final parsed = jsonDecode(raw);
+      if (parsed is! List) return const [];
+      return parsed
+          .whereType<String>()
+          .where((s) => s.isNotEmpty)
+          .toList(growable: false);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> savePortfolio(List<String> symbols) async {
+    try {
+      await (await _prefs).setString(_portfolioKey, jsonEncode(symbols));
+    } catch (_) {
+      // Ignore: the in-memory list is still correct for this session.
     }
   }
 
