@@ -337,7 +337,8 @@ void main() {
   testWidgets('shows moving averages and RSI once enough bars exist', (
     tester,
   ) async {
-    await tester.pumpWidget(appWith(respondingWith(syntheticChart(150))));
+    // Long enough for the 200-day average to cover the whole default window.
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('AAPL').first);
@@ -345,7 +346,7 @@ void main() {
 
     // The legend is always present, so three same-shaped lines are never
     // identified by colour alone.
-    for (final label in ['MA20', 'MA50', 'MA100']) {
+    for (final label in ['MA20', 'MA50', 'MA200']) {
       expect(find.text(label), findsOneWidget);
     }
     // With 150 bars every period has warmed up, so none read n/a.
@@ -383,7 +384,7 @@ void main() {
   });
 
   testWidgets('tapping a legend chip toggles that average off', (tester) async {
-    await tester.pumpWidget(appWith(respondingWith(syntheticChart(150))));
+    await tester.pumpWidget(appWith(respondingWith(syntheticChart(400))));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('AAPL').first);
@@ -397,7 +398,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final periods = chartWidget().overlays.map((o) => o.period);
-    expect(periods, [20, 100]);
+    expect(periods, [20, 200]);
 
     await tester.tap(find.text('MA50'));
     await tester.pumpAndSettle();

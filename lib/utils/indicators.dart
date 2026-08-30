@@ -7,7 +7,7 @@ library;
 
 /// Simple moving average of [values] over [period] bars.
 ///
-/// Uses a running sum rather than re-adding a window per bar, so a 100 SMA
+/// Uses a running sum rather than re-adding a window per bar, so a 200 SMA
 /// over a long series stays O(n).
 List<double?> simpleMovingAverage(List<double> values, int period) {
   final out = List<double?>.filled(values.length, null);
@@ -79,5 +79,9 @@ const rsiOversold = 30.0;
 /// Default RSI lookback.
 const rsiPeriod = 14;
 
-/// Moving-average periods overlaid on the price chart.
-const maPeriods = [20, 50, 100];
+/// Moving-average periods overlaid on the price chart, in trading days.
+///
+/// 200 needs roughly ten months of history before it can be drawn at all, and
+/// the chart fetches five years, so it is available for everything but the
+/// oldest bars of a newly listed symbol.
+const maPeriods = [20, 50, 200];
