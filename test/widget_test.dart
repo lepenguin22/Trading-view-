@@ -848,4 +848,27 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump();
   });
+
+  testWidgets('the app bar fits a narrow phone', (tester) async {
+    // The default test surface is 800px wide, which hides overflow. A real
+    // phone is around 360dp, and the title now sits beside two action icons.
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+      'ticker.portfolio.symbols.v1': '["MSFT"]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    // A RenderFlex overflow fails the test, so reaching here is the assertion.
+    expect(find.byType(AppBar), findsOneWidget);
+    expect(find.text('Watchlist (1)'), findsOneWidget);
+
+    await teardown(tester);
+  });
 }

@@ -1,6 +1,6 @@
-# Ticker
+# Portfolio Alerts
 
-A mobile app for tracking the share price of publicly listed companies.
+A mobile app for tracking your portfolio and watchlist, with price alerts.
 Built with Flutter, so one Dart codebase runs on both iOS and Android.
 
 ## What it does
@@ -210,6 +210,27 @@ least one alert is armed, so a device with none does no background work at all.
 
 Notification permission is requested when you create your first alert, rather
 than at launch, so the system prompt arrives with obvious context.
+
+## The launcher icon
+
+The icon is a bull's head with an up arrow cut from its forehead — the arrow
+doubles as the animal's face marking and as the chart direction, which is what
+makes it read as a bull *market* rather than just a bull. It uses the app's own
+"up" green on its dark background.
+
+The art is generated rather than hand-drawn, by `tool/make_icon.py`, which
+writes the two masters in `assets/icon/`: a full-bleed square, and a
+transparent foreground inset to the safe zone Android crops adaptive icons to,
+so the horns are never clipped by a round mask. Every platform density comes
+from those two:
+
+```bash
+python3 tool/make_icon.py     # redraw the masters
+dart run flutter_launcher_icons
+```
+
+Adjusting the mark means editing the geometry in the script and re-running
+both, rather than re-cutting a dozen PNGs by hand.
 
 ## Building a signed release
 

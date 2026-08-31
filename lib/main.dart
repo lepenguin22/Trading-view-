@@ -63,7 +63,7 @@ class TickerApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'Ticker',
+        title: 'Portfolio Alerts',
         debugShowCheckedModeBanner: false,
         theme: lightTheme,
         darkTheme: darkTheme,

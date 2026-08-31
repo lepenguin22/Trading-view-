@@ -65,7 +65,7 @@ class _WatchlistScreenState extends State<WatchlistScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ticker'),
+        title: const Text('Portfolio Alerts'),
         actions: [
           IconButton(
             onPressed: () => Navigator.of(context)
