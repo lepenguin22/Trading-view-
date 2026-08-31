@@ -135,6 +135,51 @@ void main() {
     await teardown(tester);
   });
 
+  testWidgets('the open detail screen is polled faster than the list', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final afterOpen = requestCount;
+
+    // Well short of the 60s list interval, so anything fetched here is the
+    // focused symbol being polled on its own, faster clock.
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pumpAndSettle();
+
+    final duringFocus = requestCount - afterOpen;
+    expect(duringFocus, greaterThan(0));
+    // One symbol per poll, not the whole list: at ~10s that is a handful of
+    // requests in 30s, nowhere near a request per holding.
+    expect(duringFocus, lessThan(6));
+
+    await teardown(tester);
+  });
+
+  testWidgets('closing the detail screen stops the fast polling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    final afterClose = requestCount;
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pumpAndSettle();
+
+    expect(requestCount, afterClose);
+
+    await teardown(tester);
+  });
+
   testWidgets('opens the detail screen for a tapped row', (tester) async {
     await tester.pumpWidget(appWith(respondingWith(chart1d)));
     await tester.pumpAndSettle();

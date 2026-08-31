@@ -8,7 +8,8 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
 - **Two lists, side by side** — a **Watchlist** of symbols you chose to follow,
   and a **Portfolio** mirrored from your spreadsheet. Both show live price,
   absolute and percentage day change, and a sparkline of the session. Pull to
-  refresh; both re-poll together every 60 seconds while the app is on screen.
+  refresh; both re-poll together while the app is on screen, on the adaptive
+  cadence described below.
 - **Search** — find a company, fund or index by name or ticker. Covers global
   exchanges (`AAPL`, `VOD.L`, `BMW.DE`, `BTC-USD`, `^FTSE`).
 - **Detail** — a daily candlestick chart you pinch to zoom and drag to pan,
@@ -203,8 +204,8 @@ a 3% gap "undervalued" would lend the number authority it has not earned.
 **A valuation is fetched only when you open a stock, and then kept for a
 week.** FMP's free plan allows a few hundred requests a day, and a DCF only
 moves when the provider re-runs it against new filings — quarterly at most.
-Putting it on the 60-second price poll would exhaust the allowance on a figure
-that had not changed.
+Putting it on the price poll would exhaust the allowance on a figure that had
+not changed.
 
 A non-positive DCF — real for a company with negative projected cash flows — is
 reported rather than displayed, because every ratio built on it would be
@@ -214,6 +215,41 @@ the mismatch is stated instead of the two being compared silently.
 **The API key is stored on the device only.** It is never bundled into the
 build, so it can be rotated without shipping a new APK, but anyone who can read
 the app's data can read it.
+
+## How often prices update
+
+There is no live tick feed here. Yahoo's chart endpoint is a request-response
+API and it costs **one request per symbol**, so a twenty-holding portfolio on a
+sixty-second poll is already twenty requests a minute — shortening that across
+the board buys a little freshness and a lot of HTTP 429s.
+
+So the app spends its request budget where you are actually looking:
+
+| Situation | Cadence |
+| --- | --- |
+| Both lists, market open | every **60s** |
+| Both lists, all markets closed | every **5 min** |
+| The stock whose detail screen is open | every **10s** |
+| App backgrounded | polling stops; a full refresh runs on resume |
+
+The fast poll refetches **one** symbol, not the list, so watching a stock costs
+six requests a minute no matter how many holdings you own. Opening a detail
+screen polls it immediately rather than waiting out an interval, and closing it
+stops the fast poll. A whole-list refresh resets the focused symbol's clock too,
+so the two never double up.
+
+"Market closed" is read from the `marketState` each quote carries, so a
+portfolio spanning exchanges stays on the open cadence while any one of them is
+trading. Before the first quotes arrive, the market is assumed open — guessing
+closed would make a cold start feel broken.
+
+**Pull to refresh** always fetches immediately, whatever the cadence says.
+
+Going genuinely tick-by-tick would need a streaming provider (Finnhub or
+Polygon over WebSocket, both with a free tier), which means an API key, a
+persistent socket and its reconnection handling. Worth doing if second-by-second
+matters; the polling above is deliberately the version with no new dependencies
+and no key to manage.
 
 ## How price alerts work
 
@@ -225,8 +261,8 @@ condition already holds.
 
 Alerts are checked in two places:
 
-- **While the app is open**, on the existing 60-second refresh, so a due alert
-  fires within about a minute.
+- **While the app is open**, on every list refresh, so a due alert fires within
+  about a minute.
 - **In the background**, via `workmanager`, roughly every 15 minutes.
 
 **What to expect on each platform.** On Android this works as you would hope:
@@ -335,6 +371,7 @@ lib/api/
   valuation_source.dart  Fetches a DCF fair value from Financial Modeling Prep
   yahoo.dart             HTTP, host fallback, timeouts, error mapping
 lib/state/
+  refresh_policy.dart    When to poll what: pure cadence logic, no I/O
   watchlist.dart         Watchlist model: refresh, polling, add/remove/reorder
   alerts.dart            Alerts model: create, arm/disarm, foreground firing
   valuation_store.dart   Fair value cache, API key, lazy per-symbol fetching
@@ -357,8 +394,10 @@ test/                    Tests and payload fixtures
 ```
 
 State is a single `ChangeNotifier` (`WatchlistModel`) exposed with `provider`.
-It owns the refresh, the 60-second poll and the persistence, and it observes
-the app lifecycle so polling stops when the app is backgrounded.
+It owns the refresh, the polling cadence and the persistence, and it observes
+the app lifecycle so polling stops when the app is backgrounded. The cadence
+itself lives in `lib/state/refresh_policy.dart` as a pure function, so it can
+be tested without a clock, a network or a widget tree.
 
 Charts are drawn with `CustomPainter` rather than a charting package — the
 shapes are simple and it keeps the dependency list and the app size down.

@@ -62,17 +62,31 @@ class _DetailScreenState extends State<DetailScreen> {
   void initState() {
     super.initState();
     _load();
-    // Lazy and cached: opening a stock is the only thing that spends a
-    // valuation request, and only when the cached copy has expired.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<ValuationModel>().ensureLoaded(widget.symbol);
+      if (!mounted) return;
+      // Lazy and cached: opening a stock is the only thing that spends a
+      // valuation request, and only when the cached copy has expired.
+      context.read<ValuationModel>().ensureLoaded(widget.symbol);
+      // While this screen is open its symbol is polled faster than the lists.
+      context.read<WatchlistModel>().focusOn(widget.symbol);
     });
   }
 
   @override
   void dispose() {
     _inFlight?.cancel();
+    // Read off the model directly: the element is being torn down, so looking
+    // the provider up through this context is no longer safe.
+    _watchlist?.clearFocus(widget.symbol);
     super.dispose();
+  }
+
+  WatchlistModel? _watchlist;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _watchlist = context.read<WatchlistModel>();
   }
 
   Future<void> _load() async {

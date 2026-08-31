@@ -262,7 +262,10 @@ class _SymbolListView extends StatelessWidget {
                       : Padding(
                           padding: const EdgeInsets.only(bottom: 10),
                           child: Text(
-                            formatUpdatedAt(model.lastUpdated),
+                            model.marketOpen
+                                ? formatUpdatedAt(model.lastUpdated)
+                                : '${formatUpdatedAt(model.lastUpdated)} · '
+                                      'market closed',
                             textAlign: TextAlign.center,
                             style: TextStyle(color: c.textFaint, fontSize: 12),
                           ),
