@@ -14,6 +14,7 @@ import 'package:ticker/screens/watchlist_screen.dart';
 import 'package:ticker/state/alerts.dart';
 import 'package:ticker/state/watchlist.dart';
 import 'package:ticker/theme/app_theme.dart';
+import 'package:ticker/models/crossover.dart';
 import 'package:ticker/models/types.dart';
 import 'package:ticker/widgets/price_chart.dart';
 import 'package:ticker/widgets/rsi_pane.dart';
@@ -421,9 +422,20 @@ void main() {
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
 
-    // Shown but flagged, rather than silently absent.
-    expect(find.text('MA20'), findsOneWidget);
-    expect(find.text('n/a'), findsNWidgets(3));
+    // Shown but flagged, rather than silently absent. Asserted per chip
+    // rather than by counting every n/a on the screen, so adding a legend
+    // entry elsewhere does not silently change what this test checks.
+    for (final label in ['MA20', 'MA50', 'MA200']) {
+      final row = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(Row),
+      );
+      expect(
+        find.descendant(of: row.first, matching: find.text('n/a')),
+        findsOneWidget,
+        reason: '$label should read n/a on a four-bar range',
+      );
+    }
 
     await teardown(tester);
   });
@@ -913,6 +925,113 @@ void main() {
     // A RenderFlex overflow fails the test, so reaching here is the assertion.
     expect(find.byType(AppBar), findsOneWidget);
     expect(find.text('Watchlist (1)'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  /// A chart payload of [closes] as daily bars, so a test can hand the detail
+  /// screen a series long enough for a 200-bar average to exist at all.
+  String seriesChart(List<double> closes) {
+    const day = 86400;
+    const start = 1600000000;
+    final times = [for (var i = 0; i < closes.length; i++) start + i * day]
+        .join(',');
+    final values = closes.map((c) => c.toStringAsFixed(2)).join(',');
+    return '{"chart":{"result":[{"meta":{"currency":"USD","symbol":"AAPL",'
+        '"regularMarketPrice":${closes.last},"previousClose":${closes.first},'
+        '"longName":"Apple Inc","marketState":"REGULAR"},'
+        '"timestamp":[$times],"indicators":{"quote":[{"open":[$values],'
+        '"high":[$values],"low":[$values],"close":[$values]}]}}],'
+        '"error":null}}';
+  }
+
+  /// Falls then rises, so both moving averages and the price genuinely cross
+  /// the 200 line rather than starting on one side of it.
+  final valley = <double>[
+    for (var i = 0; i < 200; i++) 300 - i.toDouble(),
+    for (var i = 0; i < 200; i++) 100 + i.toDouble(),
+  ];
+
+  Future<void> openDetail(WidgetTester tester, List<double> closes) async {
+    await tester.pumpWidget(appWith(respondingWith(seriesChart(closes))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('the chart legend offers each crossover', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+    });
+
+    await openDetail(tester, valley);
+
+    for (final spec in crossoverSpecs) {
+      expect(
+        find.text(spec.label),
+        findsOneWidget,
+        reason: '${spec.id} has no legend chip',
+      );
+    }
+
+    await teardown(tester);
+  });
+
+  testWidgets('the most recent crossing is named in words', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+    });
+
+    await openDetail(tester, valley);
+
+    // The series turns upward, so whichever crossover fired last fired up.
+    expect(
+      find.textContaining(RegExp(r'(Golden Cross|crossed above MA200)')),
+      findsOneWidget,
+    );
+    expect(find.textContaining('ago'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a crossover chip toggles its markers off', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+    });
+
+    await openDetail(tester, valley);
+
+    final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(chart.markers, isNotEmpty);
+
+    for (final spec in crossoverSpecs) {
+      await tester.ensureVisible(find.text(spec.label));
+      await tester.tap(find.text(spec.label));
+      await tester.pumpAndSettle();
+    }
+
+    final off = tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(off.markers, isEmpty);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a range too short for MA200 shows no crossings, not a crash', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+    });
+
+    await openDetail(tester, [for (var i = 0; i < 40; i++) 100 + i.toDouble()]);
+
+    final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(chart.markers, isEmpty);
+    // The chips stay, reading as unavailable rather than disappearing.
+    for (final spec in crossoverSpecs) {
+      expect(find.text(spec.label), findsOneWidget);
+    }
+    expect(find.textContaining('ago'), findsNothing);
 
     await teardown(tester);
   });

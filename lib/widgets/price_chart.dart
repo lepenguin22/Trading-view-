@@ -79,6 +79,31 @@ class MaOverlay {
   final List<double?> values;
 }
 
+/// A crossover marked on the price series.
+class ChartMarker {
+  const ChartMarker({
+    required this.index,
+    required this.price,
+    required this.up,
+    required this.label,
+  });
+
+  /// Index into the full candle series the chart was given, so the chart can
+  /// place it against whatever window is on screen.
+  final int index;
+
+  /// Price level the marker is anchored to.
+  final double price;
+
+  /// An upward crossing. Drawn as an up triangle below the bar; a downward one
+  /// is a down triangle above it, so the two are told apart by shape and
+  /// position as well as by colour.
+  final bool up;
+
+  /// Read out in the chart's semantics label, e.g. "Golden Cross".
+  final String label;
+}
+
 /// The detail screen chart. Candlesticks by default, with a line alternative
 /// for reading the overall shape of a long range.
 ///
@@ -93,6 +118,7 @@ class PriceChart extends StatefulWidget {
     required this.onWindowChanged,
     this.style = ChartStyle.candles,
     this.overlays = const [],
+    this.markers = const [],
     this.currency = 'USD',
     this.height = _defaultHeight,
     this.baseline,
@@ -116,6 +142,10 @@ class PriceChart extends StatefulWidget {
 
   /// Moving averages drawn on top of the price series.
   final List<MaOverlay> overlays;
+
+  /// Crossovers marked on the price series. Indexed against the full candle
+  /// series, and clipped to the visible window when drawn.
+  final List<ChartMarker> markers;
 
   /// Quoted currency, for scaling and labelling the price axis.
   final String currency;
@@ -275,6 +305,19 @@ class _PriceChartState extends State<PriceChart> {
                 ),
             ];
 
+            // Markers are indexed against the full series, so they are
+            // shifted into window coordinates and anything off screen is
+            // dropped before the painter sees it.
+            final markers = [
+              for (final marker in widget.markers)
+                if (marker.index >= window.start && marker.index < window.end)
+                  (
+                    index: marker.index - window.start,
+                    price: marker.price,
+                    up: marker.up,
+                  ),
+            ];
+
             final CustomPainter painter;
             if (widget.style == ChartStyle.candles) {
               final geometry = buildCandleChart(
@@ -288,6 +331,7 @@ class _PriceChartState extends State<PriceChart> {
                 geometry: geometry,
                 candles: _drawn,
                 overlays: overlays,
+                markers: markers,
                 up: c.up,
                 down: c.down,
                 ruleColor: c.textFaint,
@@ -313,7 +357,10 @@ class _PriceChartState extends State<PriceChart> {
               painter = _LinePainter(
                 geometry: geometry,
                 overlays: overlays,
+                markers: markers,
                 color: widget.color,
+                up: c.up,
+                down: c.down,
                 fillColor: widget.color.withValues(alpha: 0.10),
                 ruleColor: c.textFaint,
                 dotBorderColor: c.card,
@@ -537,6 +584,60 @@ void _drawOverlays(
   }
 }
 
+/// A marker sampled to the drawn bars: an index into them, and where it sits.
+typedef _Marker = ({int index, double price, bool up});
+
+/// Height and width of a crossover triangle, and its clearance from the bar.
+const _markerSize = 7.0;
+const _markerGap = 5.0;
+
+/// Draws each crossover as a triangle clear of the bar it belongs to.
+///
+/// Bullish crossings point up from below the bar and bearish point down from
+/// above, so the two are distinguishable without relying on colour — the up
+/// and down greens and reds are close enough under common colour vision
+/// deficiencies that shape has to carry the meaning too.
+void _drawMarkers(
+  Canvas canvas,
+  List<_Marker> markers,
+  List<double> xs,
+  double Function(double) yFor,
+  Color up,
+  Color down,
+  double height,
+) {
+  const half = _markerSize / 2;
+
+  for (final marker in markers) {
+    if (marker.index < 0 || marker.index >= xs.length) continue;
+    final x = xs[marker.index];
+    final anchor = yFor(marker.price);
+    if (!anchor.isFinite) continue;
+
+    // Nudged back inside when a crossing lands against the top or bottom of
+    // the plot, where the triangle would otherwise be drawn off-canvas.
+    final Path path;
+    if (marker.up) {
+      var tip = anchor + _markerGap;
+      if (tip + _markerSize > height) tip = height - _markerSize;
+      path = Path()
+        ..moveTo(x, tip)
+        ..lineTo(x - half, tip + _markerSize)
+        ..lineTo(x + half, tip + _markerSize)
+        ..close();
+    } else {
+      var tip = anchor - _markerGap;
+      if (tip - _markerSize < 0) tip = _markerSize;
+      path = Path()
+        ..moveTo(x, tip)
+        ..lineTo(x - half, tip - _markerSize)
+        ..lineTo(x + half, tip - _markerSize)
+        ..close();
+    }
+    canvas.drawPath(path, Paint()..color = marker.up ? up : down);
+  }
+}
+
 /// Draws the dashed baseline rule shared by both chart forms.
 void _drawBaseline(Canvas canvas, double y, double width, Color color) {
   final paint = Paint()
@@ -558,6 +659,7 @@ class _CandlePainter extends CustomPainter {
     required this.geometry,
     required this.candles,
     required this.overlays,
+    required this.markers,
     required this.up,
     required this.down,
     required this.ruleColor,
@@ -569,6 +671,7 @@ class _CandlePainter extends CustomPainter {
   final CandleGeometry? geometry;
   final List<Candle> candles;
   final List<_Overlay> overlays;
+  final List<_Marker> markers;
   final Color up;
   final Color down;
   final Color ruleColor;
@@ -626,6 +729,15 @@ class _CandlePainter extends CustomPainter {
     }
 
     _drawOverlays(canvas, overlays, geometry.xs, geometry.yFor);
+    _drawMarkers(
+      canvas,
+      markers,
+      geometry.xs,
+      geometry.yFor,
+      up,
+      down,
+      size.height,
+    );
 
     final i = scrubIndex;
     if (i != null && i < geometry.xs.length && i < candles.length) {
@@ -664,6 +776,7 @@ class _CandlePainter extends CustomPainter {
   bool shouldRepaint(_CandlePainter old) =>
       old.axis != axis ||
       old.overlays != overlays ||
+      old.markers != markers ||
       old.candles != candles ||
       old.geometry != geometry ||
       old.baseline != baseline ||
@@ -676,7 +789,10 @@ class _LinePainter extends CustomPainter {
   const _LinePainter({
     required this.geometry,
     required this.overlays,
+    required this.markers,
     required this.color,
+    required this.up,
+    required this.down,
     required this.fillColor,
     required this.ruleColor,
     required this.dotBorderColor,
@@ -687,7 +803,10 @@ class _LinePainter extends CustomPainter {
 
   final ChartGeometry? geometry;
   final List<_Overlay> overlays;
+  final List<_Marker> markers;
   final Color color;
+  final Color up;
+  final Color down;
   final Color fillColor;
   final Color ruleColor;
   final Color dotBorderColor;
@@ -731,6 +850,7 @@ class _LinePainter extends CustomPainter {
     );
 
     _drawOverlays(canvas, overlays, chart.xs, chart.yFor);
+    _drawMarkers(canvas, markers, chart.xs, chart.yFor, up, down, size.height);
 
     final i = scrubIndex;
     if (i != null && i < chart.xs.length) {
@@ -758,6 +878,7 @@ class _LinePainter extends CustomPainter {
   bool shouldRepaint(_LinePainter old) =>
       old.axis != axis ||
       old.overlays != overlays ||
+      old.markers != markers ||
       old.geometry != geometry ||
       old.color != color ||
       old.baseline != baseline ||

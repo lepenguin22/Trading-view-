@@ -79,6 +79,53 @@ const rsiOversold = 30.0;
 /// Default RSI lookback.
 const rsiPeriod = 14;
 
+/// Which way a series crossed the one it is being compared against.
+enum CrossDirection { up, down }
+
+/// One crossing: the bar it completed on, and which way it went.
+typedef Crossing = ({int index, CrossDirection direction});
+
+/// Bars where [fast] crosses [slow].
+///
+/// A crossing is recorded on the bar whose difference takes the opposite sign
+/// to the last non-zero difference seen — not merely to the previous bar's.
+/// That distinction matters when the two series touch exactly: an equal bar is
+/// a touch, not a cross, and comparing against the previous bar alone would
+/// report a series that touches and then carries on in the same direction as
+/// having crossed twice.
+///
+/// The first bar where both series have a value only establishes which side
+/// [fast] is on; there is no earlier relationship for it to have crossed. A
+/// gap in either series resets that, because a cross spanning bars with no
+/// value cannot honestly be dated to one of them.
+List<Crossing> crossings(List<double?> fast, List<double?> slow) {
+  final out = <Crossing>[];
+  final length = fast.length < slow.length ? fast.length : slow.length;
+
+  int? lastSign;
+  for (var i = 0; i < length; i++) {
+    final f = fast[i];
+    final s = slow[i];
+    if (f == null || s == null || !f.isFinite || !s.isFinite) {
+      lastSign = null;
+      continue;
+    }
+
+    final difference = f - s;
+    if (difference == 0) continue;
+    final sign = difference > 0 ? 1 : -1;
+
+    if (lastSign != null && sign != lastSign) {
+      out.add((
+        index: i,
+        direction: sign > 0 ? CrossDirection.up : CrossDirection.down,
+      ));
+    }
+    lastSign = sign;
+  }
+  return out;
+}
+
 /// Moving-average periods overlaid on the price chart, in trading days.
 ///
 /// 200 needs roughly ten months of history before it can be drawn at all, and
