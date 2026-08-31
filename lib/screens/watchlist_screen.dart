@@ -10,6 +10,7 @@ import 'alerts_screen.dart';
 import 'detail_screen.dart';
 import 'import_screen.dart';
 import 'search_screen.dart';
+import 'settings_screen.dart';
 
 /// Which of the two lists a tab is showing.
 ///
@@ -78,12 +79,24 @@ class _WatchlistScreenState extends State<WatchlistScreen>
               child: const Icon(Icons.notifications_none),
             ),
           ),
-          IconButton(
-            onPressed: _openImport,
-            tooltip: 'Import portfolio from a spreadsheet',
-            icon: const Icon(Icons.upload_file_outlined),
+          // An overflow menu rather than more icons: the title is long enough
+          // that a third action crowds a narrow phone.
+          PopupMenuButton<String>(
+            tooltip: 'More',
+            onSelected: (value) {
+              if (value == 'import') {
+                _openImport();
+              } else {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'import', child: Text('Import portfolio')),
+              PopupMenuItem(value: 'settings', child: Text('Settings')),
+            ],
           ),
-          const SizedBox(width: 4),
         ],
         bottom: TabBar(
           controller: _tabs,
