@@ -9,6 +9,30 @@ const _sheetUrlKey = 'ticker.portfolio.sheetUrl.v1';
 const _portfolioKey = 'ticker.portfolio.symbols.v1';
 const _quotesKey = 'ticker.watchlist.quotes.v1';
 
+/// Written by the removed fair-value feature. Purged on launch: the first is
+/// an API key, and leaving a credential in app storage with no screen left to
+/// clear it from would be worse than the feature was useful.
+const _obsoleteKeys = <String>[
+  'ticker.valuation.apiKey.v1',
+  'ticker.valuation.cache.v1',
+];
+
+/// Drops storage left behind by features that no longer exist.
+///
+/// Best-effort and silent, like every other write here: a failure means the
+/// stale entries survive until the next launch, which is not worth
+/// interrupting a launch for.
+Future<void> purgeObsoleteStorage() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in _obsoleteKeys) {
+      if (prefs.containsKey(key)) await prefs.remove(key);
+    }
+  } catch (_) {
+    // Ignored deliberately.
+  }
+}
+
 /// Shown on first launch so the app is not an empty screen.
 const defaultSymbols = <String>['AAPL', 'MSFT', 'NVDA', 'AMZN'];
 

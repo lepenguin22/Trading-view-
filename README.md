@@ -16,9 +16,6 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
   with a long press to read a bar's open, high, low and close. Plus previous
   close, day high/low and exchange. A line view is a tap away for reading the
   shape of a long span.
-- **Fair value** — a discounted cash flow estimate from Financial Modeling
-  Prep on each stock, with a verdict and margin of safety against the live
-  price. Needs a free API key.
 - **Indicators** — 20, 50 and 200 simple moving averages overlaid on the price,
   each toggleable from the legend, and a 14-period RSI in its own pane.
 - **Import** — fill the Portfolio list from a spreadsheet published as CSV,
@@ -184,38 +181,6 @@ Removing a holding from the Portfolio inside the app hides it now, but the
 sheet still decides: it returns on the next import unless it is deleted there
 too.
 
-## Fair value
-
-Each stock's detail screen shows a discounted cash flow estimate from
-[Financial Modeling Prep](https://site.financialmodelingprep.com), the price as
-a share of it, and the resulting margin of safety. Add a free API key under
-**Settings** (the overflow menu on the home screen) to switch it on.
-
-**The number is FMP's model output, not a measurement.** It is attributed in
-the UI and dated, and shown beside the live price rather than in place of it.
-A different provider modelling the same company will produce a different
-figure, sometimes materially — GuruFocus's GF Value in particular uses a quite
-different method and will disagree.
-
-**The verdict bands are deliberately wide.** Within ±10% of fair value a stock
-reads "fairly valued"; a DCF is a projection with wide error bars, and calling
-a 3% gap "undervalued" would lend the number authority it has not earned.
-
-**A valuation is fetched only when you open a stock, and then kept for a
-week.** FMP's free plan allows a few hundred requests a day, and a DCF only
-moves when the provider re-runs it against new filings — quarterly at most.
-Putting it on the price poll would exhaust the allowance on a figure that had
-not changed.
-
-A non-positive DCF — real for a company with negative projected cash flows — is
-reported rather than displayed, because every ratio built on it would be
-meaningless. If the provider quotes a different currency from the price feed,
-the mismatch is stated instead of the two being compared silently.
-
-**The API key is stored on the device only.** It is never bundled into the
-build, so it can be rotated without shipping a new APK, but anyone who can read
-the app's data can read it.
-
 ## How often prices update
 
 There is no live tick feed here. Yahoo's chart endpoint is a request-response
@@ -364,24 +329,21 @@ lib/main.dart            App root, providers and theme wiring
 lib/models/
   types.dart             PricePoint, Candle, Quote, History, ChartWindow
   alert.dart             PriceAlert and the pure firing logic (unit tested)
-  valuation.dart         Fair value, verdict bands, margin of safety (tested)
 lib/api/
   parse.dart             Pure parsers for the Yahoo payloads (unit tested)
   portfolio_source.dart  Fetches a published CSV sheet
-  valuation_source.dart  Fetches a DCF fair value from Financial Modeling Prep
   yahoo.dart             HTTP, host fallback, timeouts, error mapping
 lib/state/
   refresh_policy.dart    When to poll what: pure cadence logic, no I/O
   watchlist.dart         Watchlist model: refresh, polling, add/remove/reorder
   alerts.dart            Alerts model: create, arm/disarm, foreground firing
-  valuation_store.dart   Fair value cache, API key, lazy per-symbol fetching
   storage.dart           SharedPreferences persistence
   alert_storage.dart     Alert persistence, shared with the background isolate
 lib/background/
   alert_worker.dart      Background entry point, check routine and scheduling
 lib/notifications/
   notifications.dart     Local notification channel, permission and posting
-lib/screens/             Watchlist, Search, Detail, Alerts, Import, Settings
+lib/screens/             Watchlist, Search, Detail, Alerts, Import
 lib/widgets/             QuoteRow, PriceChart, RsiPane, Sparkline, ChangePill,
                          AlertSheet
 lib/utils/
