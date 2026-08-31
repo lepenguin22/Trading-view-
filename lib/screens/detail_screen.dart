@@ -4,7 +4,9 @@ import 'package:provider/provider.dart';
 import '../api/yahoo.dart';
 import '../models/alert.dart';
 import '../models/types.dart';
+import '../models/valuation.dart';
 import '../state/alerts.dart';
+import '../state/valuation_store.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/chart.dart';
@@ -14,6 +16,7 @@ import '../widgets/alert_sheet.dart';
 import '../widgets/change_pill.dart';
 import '../widgets/price_chart.dart';
 import '../widgets/rsi_pane.dart';
+import 'settings_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({super.key, required this.symbol});
@@ -59,12 +62,31 @@ class _DetailScreenState extends State<DetailScreen> {
   void initState() {
     super.initState();
     _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // Lazy and cached: opening a stock is the only thing that spends a
+      // valuation request, and only when the cached copy has expired.
+      context.read<ValuationModel>().ensureLoaded(widget.symbol);
+      // While this screen is open its symbol is polled faster than the lists.
+      context.read<WatchlistModel>().focusOn(widget.symbol);
+    });
   }
 
   @override
   void dispose() {
     _inFlight?.cancel();
+    // Read off the model directly: the element is being torn down, so looking
+    // the provider up through this context is no longer safe.
+    _watchlist?.clearFocus(widget.symbol);
     super.dispose();
+  }
+
+  WatchlistModel? _watchlist;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _watchlist = context.read<WatchlistModel>();
   }
 
   Future<void> _load() async {
@@ -276,6 +298,12 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(height: 20),
               _Stats(currency: currency, quote: quote),
             ],
+            const SizedBox(height: 20),
+            _FairValue(
+              symbol: widget.symbol,
+              price: quote?.price ?? _visible.lastOrNull?.close,
+              currency: currency,
+            ),
             const SizedBox(height: 20),
             _alertsSection(currency, headline?.price ?? quote?.price),
             const SizedBox(height: 20),
@@ -765,6 +793,192 @@ class _OhlcStrip extends StatelessWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Price against a discounted-cash-flow fair value.
+///
+/// Always shown beside the live price rather than in place of it: the DCF is a
+/// third party's projection, and the section names its source and its age so
+/// it is read as an opinion rather than a measurement.
+class _FairValue extends StatelessWidget {
+  const _FairValue({
+    required this.symbol,
+    required this.price,
+    required this.currency,
+  });
+
+  final String symbol;
+  final double? price;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final model = context.watch<ValuationModel>();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.border),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(
+                'Fair value (DCF)',
+                style: TextStyle(
+                  color: c.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              if (model.isLoading(symbol))
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: c.textMuted,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _body(context, model),
+        ],
+      ),
+    );
+  }
+
+  Widget _body(BuildContext context, ValuationModel model) {
+    final c = context.colors;
+
+    if (!model.hasApiKey) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Add a Financial Modeling Prep API key to see a fair value '
+            'estimate. Their free tier is enough.',
+            style: TextStyle(color: c.textMuted, fontSize: 13, height: 1.4),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
+            style: TextButton.styleFrom(
+              foregroundColor: c.accent,
+              padding: EdgeInsets.zero,
+            ),
+            child: const Text('Open settings'),
+          ),
+        ],
+      );
+    }
+
+    final error = model.errorFor(symbol);
+    if (error != null) {
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              error,
+              style: TextStyle(color: c.textMuted, fontSize: 13, height: 1.4),
+            ),
+          ),
+          TextButton(
+            onPressed: () => model.ensureLoaded(symbol, force: true),
+            style: TextButton.styleFrom(foregroundColor: c.accent),
+            child: const Text('Retry'),
+          ),
+        ],
+      );
+    }
+
+    final valuation = model.valuationFor(symbol);
+    if (valuation == null) {
+      return Text(
+        model.isLoading(symbol) ? 'Fetching…' : 'No valuation yet.',
+        style: TextStyle(color: c.textMuted, fontSize: 13),
+      );
+    }
+
+    final live = price;
+    final verdict = live == null ? null : verdictFor(live, valuation.dcf);
+    final margin = live == null ? null : marginOfSafety(live, valuation.dcf);
+    // Green for a discount, red for a premium — the same direction the rest of
+    // the app uses for "good for the holder".
+    final tint = verdict == null
+        ? c.textMuted
+        : verdict.isCheap
+        ? c.up
+        : verdict.isExpensive
+        ? c.down
+        : c.textMuted;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Text(
+              formatPrice(valuation.dcf, currency),
+              style: tabularFigures.copyWith(
+                color: c.text,
+                fontSize: 22,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 10),
+            if (verdict != null)
+              Expanded(
+                child: Text(
+                  verdict.label,
+                  style: TextStyle(
+                    color: tint,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+          ],
+        ),
+        if (margin != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            margin >= 0
+                ? '${margin.toStringAsFixed(1)}% below fair value'
+                : '${margin.abs().toStringAsFixed(1)}% above fair value',
+            style: tabularFigures.copyWith(color: tint, fontSize: 13),
+          ),
+        ],
+        if (valuation.currency != currency) ...[
+          const SizedBox(height: 8),
+          // Comparing a USD model output against a pence-quoted price would be
+          // nonsense, so the mismatch is stated rather than hidden.
+          Text(
+            'Quoted in ${valuation.currency} while the price is in $currency — '
+            'these are not directly comparable.',
+            style: TextStyle(color: c.danger, fontSize: 12, height: 1.4),
+          ),
+        ],
+        const SizedBox(height: 10),
+        Text(
+          'Financial Modeling Prep · ${formatUpdatedAt(valuation.fetchedAt).replaceFirst("Updated ", "fetched ")}'
+          '${isStale(valuation) ? " · refreshing soon" : ""}',
+          style: TextStyle(color: c.textFaint, fontSize: 11.5),
+        ),
+      ],
     );
   }
 }

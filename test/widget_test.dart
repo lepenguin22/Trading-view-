@@ -11,7 +11,10 @@ import 'package:ticker/main.dart';
 import 'package:ticker/api/portfolio_source.dart';
 import 'package:ticker/screens/import_screen.dart';
 import 'package:ticker/screens/watchlist_screen.dart';
+import 'package:ticker/api/valuation_source.dart';
+import 'package:ticker/screens/settings_screen.dart';
 import 'package:ticker/state/alerts.dart';
+import 'package:ticker/state/valuation_store.dart';
 import 'package:ticker/state/watchlist.dart';
 import 'package:ticker/theme/app_theme.dart';
 import 'package:ticker/models/types.dart';
@@ -40,11 +43,16 @@ void main() {
   ///
   /// Notifications and background scheduling are faked: both would otherwise
   /// reach for a platform that does not exist under `flutter test`.
-  Widget appWith(http.Client client) {
+  Widget appWith(http.Client client, {http.Client? valuationClient}) {
     return TickerApp(
       createApi: () => YahooApi(client: client),
       createAlerts: () =>
           AlertsModel(notifier: notifier, scheduler: (_) async {}),
+      createValuations: valuationClient == null
+          ? null
+          : () => ValuationModel(
+              source: ValuationSource(client: valuationClient),
+            ),
     );
   }
 
@@ -123,6 +131,51 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(requestCount, greaterThan(afterFirstLoad));
+
+    await teardown(tester);
+  });
+
+  testWidgets('the open detail screen is polled faster than the list', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final afterOpen = requestCount;
+
+    // Well short of the 60s list interval, so anything fetched here is the
+    // focused symbol being polled on its own, faster clock.
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pumpAndSettle();
+
+    final duringFocus = requestCount - afterOpen;
+    expect(duringFocus, greaterThan(0));
+    // One symbol per poll, not the whole list: at ~10s that is a handful of
+    // requests in 30s, nowhere near a request per holding.
+    expect(duringFocus, lessThan(6));
+
+    await teardown(tester);
+  });
+
+  testWidgets('closing the detail screen stops the fast polling', (
+    tester,
+  ) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    final afterClose = requestCount;
+    await tester.pump(const Duration(seconds: 30));
+    await tester.pumpAndSettle();
+
+    expect(requestCount, afterClose);
 
     await teardown(tester);
   });
@@ -868,6 +921,183 @@ void main() {
     // A RenderFlex overflow fails the test, so reaching here is the assertion.
     expect(find.byType(AppBar), findsOneWidget);
     expect(find.text('Watchlist (1)'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  /// A valuation endpoint that answers every symbol with [dcf].
+  MockClient dcfReturning(double dcf) => MockClient(
+    (_) async => http.Response(
+      '[{"symbol":"AAPL","dcf":$dcf}]',
+      200,
+      headers: {'content-type': 'application/json'},
+    ),
+  );
+
+  testWidgets('without an API key the fair value section explains itself', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Fair value (DCF)'), 300);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining('Financial Modeling Prep API key'),
+      findsOneWidget,
+    );
+    // Offers the way in rather than leaving a dead panel.
+    expect(find.widgetWithText(TextButton, 'Open settings'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('with a key it shows the DCF, verdict and margin', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.valuation.apiKey.v1': 'test-key',
+    });
+
+    await tester.pumpWidget(
+      appWith(feedResolving(), valuationClient: dcfReturning(200)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Fair value (DCF)'), 300);
+    await tester.pumpAndSettle();
+
+    // The fixture quotes the stock at 100 against a fair value of 200.
+    expect(find.textContaining('200.00'), findsWidgets);
+    expect(find.text('Significantly undervalued'), findsOneWidget);
+    expect(find.textContaining('50.0% below fair value'), findsOneWidget);
+    // Attributed, so the number is not mistaken for the app's own.
+    expect(find.textContaining('Financial Modeling Prep ·'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a rejected key is reported on the stock, with a retry', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.valuation.apiKey.v1': 'bad-key',
+    });
+
+    await tester.pumpWidget(
+      appWith(
+        feedResolving(),
+        valuationClient: MockClient((_) async => http.Response('', 401)),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(find.text('Fair value (DCF)'), 300);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('rejected'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Retry'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the settings screen saves a key', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    final model = ValuationModel(
+      source: ValuationSource(client: dcfReturning(150)),
+    );
+    await model.start();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: lightTheme,
+        home: ChangeNotifierProvider<ValuationModel>.value(
+          value: model,
+          child: const SettingsScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(model.hasApiKey, isFalse);
+
+    await tester.enterText(find.byType(TextField), 'my-key');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save key'));
+    await tester.pumpAndSettle();
+
+    expect(model.hasApiKey, isTrue);
+    expect(model.apiKey, 'my-key');
+    expect(find.textContaining('Key saved'), findsOneWidget);
+
+    model.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('a cached valuation is not refetched', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.valuation.apiKey.v1': 'test-key',
+    });
+
+    var calls = 0;
+    final counting = MockClient((_) async {
+      calls++;
+      return http.Response(
+        '[{"symbol":"AAPL","dcf":200}]',
+        200,
+        headers: {'content-type': 'application/json'},
+      );
+    });
+
+    await tester.pumpWidget(
+      appWith(feedResolving(), valuationClient: counting),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+
+    // Leaving and reopening must not spend another request against a free
+    // tier for a figure that changes quarterly.
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    expect(calls, 1);
+
+    await teardown(tester);
+  });
+
+  testWidgets('import and settings live in the overflow menu', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import portfolio'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SettingsScreen), findsOneWidget);
 
     await teardown(tester);
   });

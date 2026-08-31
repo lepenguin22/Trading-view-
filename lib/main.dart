@@ -6,6 +6,7 @@ import 'api/yahoo.dart';
 import 'background/alert_worker.dart';
 import 'screens/watchlist_screen.dart';
 import 'state/alerts.dart';
+import 'state/valuation_store.dart';
 import 'state/watchlist.dart';
 import 'theme/app_theme.dart';
 
@@ -26,13 +27,21 @@ Future<void> main() async {
 }
 
 class TickerApp extends StatelessWidget {
-  const TickerApp({super.key, this.createApi, this.createAlerts});
+  const TickerApp({
+    super.key,
+    this.createApi,
+    this.createAlerts,
+    this.createValuations,
+  });
 
   /// Overridden in tests to supply an API over a faked HTTP client.
   final YahooApi Function()? createApi;
 
   /// Overridden in tests to avoid touching real notifications or scheduling.
   final AlertsModel Function()? createAlerts;
+
+  /// Overridden in tests to supply a valuation source over a faked client.
+  final ValuationModel Function()? createValuations;
 
   @override
   Widget build(BuildContext context) {
@@ -51,6 +60,13 @@ class TickerApp extends StatelessWidget {
         // it.
         ChangeNotifierProvider(
           create: (_) => (createAlerts?.call() ?? AlertsModel())..start(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) =>
+              (createValuations?.call() ?? ValuationModel())..start(),
+          // Eager, so hydration begins at launch rather than the first time a
+          // detail screen happens to read it.
+          lazy: false,
         ),
         ChangeNotifierProxyProvider<AlertsModel, WatchlistModel>(
           create: (context) =>

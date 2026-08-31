@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import '../api/yahoo.dart';
 import '../models/types.dart';
 import '../utils/format.dart';
+import 'refresh_policy.dart';
 import 'storage.dart';
 
 /// What a portfolio import did.
@@ -37,9 +38,6 @@ class ImportOutcome {
   bool get changedNothing => added.isEmpty && removed.isEmpty;
 }
 
-/// How often the watchlist re-polls while the app is in the foreground.
-const _refreshInterval = Duration(seconds: 60);
-
 /// The watchlist: which symbols the user tracks, their latest quotes, and the
 /// polling that keeps those quotes current.
 ///
@@ -67,6 +65,19 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
 
   Timer? _timer;
   CancelToken? _inFlight;
+
+  /// The symbol whose detail screen is open, polled faster than the lists.
+  String? _focusSymbol;
+
+  /// How long since each kind of refresh last completed, so the policy can
+  /// decide what a tick owes without a timer per concern.
+  ///
+  /// Accumulated a tick at a time rather than read off the wall clock: the
+  /// timer only runs in the foreground, and a resume forces a full refresh
+  /// that zeroes both, so ticks are the only elapsed time that matters.
+  Duration _sinceList = Duration.zero;
+  Duration _sinceFocus = Duration.zero;
+  bool _refreshingOne = false;
   bool _disposed = false;
 
   /// Called with the full quote map after every refresh that returned data.
@@ -132,8 +143,71 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// True when any tracked symbol's market is open, from the last quotes seen.
+  bool get marketOpen =>
+      isMarketOpen([for (final q in _quotes.values) q.marketState]);
+
+  /// Marks a symbol as the one on screen, so it is polled quickly.
+  void focusOn(String symbol) {
+    if (_focusSymbol == symbol) return;
+    _focusSymbol = symbol;
+    // Due immediately, so the first fast poll happens on the next tick rather
+    // than up to a whole interval after the screen opened.
+    _sinceFocus = focusInterval;
+  }
+
+  void clearFocus(String symbol) {
+    if (_focusSymbol == symbol) _focusSymbol = null;
+  }
+
   void _startPolling() {
-    _timer ??= Timer.periodic(_refreshInterval, (_) => unawaited(refresh()));
+    _timer ??= Timer.periodic(refreshTick, (_) => unawaited(_onTick()));
+  }
+
+  /// Runs whatever the policy says this tick owes.
+  Future<void> _onTick() async {
+    _sinceList += refreshTick;
+    _sinceFocus += refreshTick;
+
+    final plan = planRefresh(
+      sinceList: _sinceList,
+      sinceFocus: _sinceFocus,
+      focusSymbol: _focusSymbol,
+      marketOpen: marketOpen,
+    );
+
+    if (plan.refreshList) return refresh();
+    final symbol = plan.refreshSymbol;
+    if (symbol != null) return refreshOne(symbol);
+  }
+
+  /// Refetches a single symbol.
+  ///
+  /// Separate from [refresh] so watching one stock costs one request per tick
+  /// rather than one per holding.
+  Future<void> refreshOne(String symbol) async {
+    if (_refreshingOne || _disposed) return;
+    _refreshingOne = true;
+    try {
+      final quote = await _api.fetchQuote(symbol);
+      if (_disposed) return;
+      final next = Map.of(_quotes)..[quote.symbol] = quote;
+      _quotes = next;
+      _errors = Map.of(_errors)..remove(symbol);
+      _lastUpdated = DateTime.now().millisecondsSinceEpoch;
+      _sinceFocus = Duration.zero;
+      unawaited(_storage.saveCachedQuotes(next));
+      unawaited(_notifyQuoteListeners(next));
+      notifyListeners();
+    } catch (err) {
+      if (_disposed) return;
+      // A single failed tick is not worth surfacing: the next one, or the
+      // whole-list refresh behind it, will correct it.
+      _sinceFocus = Duration.zero;
+      debugPrint('Focused refresh of $symbol failed: $err');
+    } finally {
+      _refreshingOne = false;
+    }
   }
 
   void _stopPolling() {
@@ -178,6 +252,10 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
       _errors = batch.errors;
     } finally {
       if (!token.isCancelled && !_disposed) {
+        _sinceList = Duration.zero;
+        // A whole-list refresh covers the focused symbol, so its clock resets
+        // too and the two do not double up.
+        _sinceFocus = Duration.zero;
         _refreshing = false;
         if (identical(_inFlight, token)) _inFlight = null;
         notifyListeners();
