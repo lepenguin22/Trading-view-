@@ -1,5 +1,5 @@
 name: ticker
-description: "Track the share price of publicly listed companies."
+description: "Track your portfolio and watchlist, with price alerts."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -52,6 +52,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -94,3 +95,16 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# Launcher icons are generated from one master with:
+#   dart run flutter_launcher_icons
+# The source art is produced by tool/make_icon.py, so the mark can be adjusted
+# and regenerated rather than re-drawn by hand at every density.
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
+  adaptive_icon_background: "#0B0F14"
+  adaptive_icon_foreground: "assets/icon/icon_foreground.png"
+  # iOS rejects icons with an alpha channel.
+  remove_alpha_ios: true
