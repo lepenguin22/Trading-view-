@@ -158,6 +158,98 @@ void main() {
     });
   });
 
+  group('cost basis', () {
+    test('reads the average-cost column from the real sheet layout', () {
+      // The fixture's column is headed "Average price bought  (US)", with a
+      // double space and a currency note.
+      final holdings = parseHoldingsCsv(sheet);
+
+      expect(
+        {for (final h in holdings) h.symbol: h.costPerShare},
+        {'AAA': 100.0, 'BBB': 200.0, 'CCC': 50.0, 'DDD.L': 25.0, 'BRK-B': 10.0},
+      );
+    });
+
+    test('never reads the live price as a cost', () {
+      // "Current Stock Price" sits two columns from the cost in the fixture.
+      // Reading it would report every position as having no gain at all.
+      final aaa = parseHoldingsCsv(sheet).first;
+
+      expect(aaa.costPerShare, 100.0);
+      expect(aaa.costPerShare, isNot(110.0));
+    });
+
+    test('never reads a total-cost column as a price per share', () {
+      // "Principal invested" is the whole position. Treating it as a unit
+      // price would overstate the cost by a factor of the share count.
+      const csv = 'Ticker,Shares,Principal invested\nAAPL,10,"1,000.00"\n';
+
+      expect(parseHoldingsCsv(csv).single.costPerShare, isNull);
+    });
+
+    test('a column is claimed by one meaning only', () {
+      // Both kinds match on a leading word, so a sheet must not be able to
+      // have one column read as quantity and price at once.
+      const csv = 'Ticker,Shares bought,Average price\nAAPL,10,50\n';
+      final holding = parseHoldingsCsv(csv).single;
+
+      expect(holding.shares, 10);
+      expect(holding.costPerShare, 50);
+    });
+
+    test('accepts the header spellings sheets actually use', () {
+      for (final header in [
+        'Cost',
+        'Cost basis',
+        'Average price',
+        'Average price bought (US)',
+        'Avg cost',
+        'Buy price',
+        'Purchase price',
+        'Price paid',
+      ]) {
+        expect(
+          parseHoldingsCsv('Ticker,Shares,$header\nAAPL,10,50\n')
+              .single
+              .costPerShare,
+          50,
+          reason: '"$header" should mark the cost column',
+        );
+      }
+    });
+
+    test('a sheet with no cost column still imports, without a cost', () {
+      const csv = 'Ticker,Shares\nAAPL,10\n';
+      final holding = parseHoldingsCsv(csv).single;
+
+      expect(holding.shares, 10);
+      expect(holding.costPerShare, isNull);
+      expect(holding.costBasis, isNull);
+      expect(holding.gainAt(200), isNull);
+    });
+  });
+
+  group('parseMoney', () {
+    test('strips currency marks a sheet writes prices with', () {
+      expect(parseMoney(r'$100.00'), 100);
+      expect(parseMoney('£1,250.50'), 1250.50);
+      expect(parseMoney('USD 42'), 42);
+    });
+
+    test('rejects a zero or negative cost', () {
+      // A zero cost would report the whole position as pure profit.
+      expect(parseMoney('0'), isNull);
+      expect(parseMoney('0.00'), isNull);
+      expect(parseMoney('-10'), isNull);
+    });
+
+    test('rejects anything that is not a number', () {
+      expect(parseMoney(''), isNull);
+      expect(parseMoney('n/a'), isNull);
+      expect(parseMoney('—'), isNull);
+    });
+  });
+
   group('parseShares', () {
     test('reads plain and thousands-separated numbers', () {
       expect(parseShares('10'), 10);

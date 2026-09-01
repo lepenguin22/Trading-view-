@@ -904,6 +904,79 @@ void main() {
     await teardown(tester);
   });
 
+  testWidgets('the portfolio shows gain per row and in the total', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"costPerShare":80},'
+          '{"symbol":"MSFT","shares":5,"costPerShare":125}]',
+    });
+
+    // Everything resolves at 100: AAPL cost 800 now 1000, MSFT cost 625 now
+    // 500. Together 1425 paid, 1500 now, so +75.
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (2)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Since bought'), findsOneWidget);
+    expect(find.textContaining('+\$75.00'), findsOneWidget);
+
+    // Per row, as a percentage: +25.00% and −20.00%.
+    expect(find.text('+25.00%'), findsOneWidget);
+    expect(find.text('−20.00%'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a gain over fewer holdings than the value says so', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"costPerShare":80},'
+          '{"symbol":"MSFT","shares":5}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (2)'));
+    await tester.pumpAndSettle();
+
+    // Both are valued, so the total covers 2 holdings...
+    expect(find.text('2 holdings'), findsOneWidget);
+    expect(find.text('\$1,500.00'), findsOneWidget);
+    // ...but only one has a cost, and the gain must not read as the whole
+    // portfolio's return.
+    expect(find.text('of 1'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a portfolio with no costs shows no gain line', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1': '[{"symbol":"AAPL","shares":10}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    // The value still shows; there is simply no return to report.
+    expect(find.text('\$1,000.00'), findsOneWidget);
+    expect(find.text('Since bought'), findsNothing);
+
+    await teardown(tester);
+  });
+
   testWidgets('the watchlist has no total, since it holds nothing', (
     tester,
   ) async {

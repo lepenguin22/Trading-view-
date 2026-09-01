@@ -6,8 +6,8 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
 ## What it does
 
 - **Two lists, side by side** — a **Watchlist** of symbols you chose to follow,
-  and a **Portfolio** mirrored from your spreadsheet, with each holding's size
-  and market value and a total above the list. Both show live price,
+  and a **Portfolio** mirrored from your spreadsheet, with each holding's size,
+  market value and return since purchase, and a total above the list. Both show live price,
   absolute and percentage day change, and a sparkline of the session. Pull to
   refresh; both re-poll together while the app is on screen, on the adaptive
   cadence described below.
@@ -223,17 +223,30 @@ the stock. Alerting on one would mean the background worker fetching daily
 history per symbol rather than just a quote — a considerably heavier job, and
 not what this does.
 
-## Position values and the portfolio total
+## Position values, cost basis and the portfolio total
 
 If your sheet has a quantity column beside the tickers, the Portfolio tab shows
-what each holding is worth and totals them above the list.
+what each holding is worth and totals them above the list. Add an average-cost
+column and it also shows the return since purchase, per holding and overall.
 
-The quantity column is found in the same header row as the tickers — never
-elsewhere in the sheet, so the closed-positions table below cannot contribute a
-number. It matches on the leading word, because real sheets write "Shares
-bought" and "Quantity owned" rather than a bare "Shares". A header that merely
-*mentions* shares later on is refused: "Value of shares" is money, and reading
-it as a count would multiply a value by a price.
+Both columns are found in the same header row as the tickers — never elsewhere
+in the sheet, so the closed-positions table below cannot contribute a number.
+They match on the leading word, because real sheets write "Shares bought",
+"Quantity owned" and "Average price bought (US)" rather than bare labels. A
+column can only mean one thing: whichever kind claims it first keeps it, so a
+quantity is never also read as a price.
+
+Two lookalike columns are deliberately refused:
+
+- **"Value of shares"** mentions shares but holds money. Reading it as a count
+  would multiply a value by a price.
+- **"Principal invested"** is the cost of the whole position, not the price per
+  share. Reading it as a unit cost would overstate the basis by a factor of the
+  share count.
+
+The live price is not a cost either — "Current stock price" leads with a word
+no cost header does, so a position never reports a return of exactly zero
+because the app compared the price against itself.
 
 **Totals are kept per currency and never added across them.** Converting pounds
 to dollars needs an exchange rate this app does not have, and one invented
@@ -244,7 +257,15 @@ a block per currency, largest first.
 quote has not arrived, cannot be valued — so it is named under the total
 ("2 holdings not counted") rather than silently dropped from a sum the user
 would otherwise trust. An unreadable quantity is never read as zero, which
-would value a real position at nothing.
+would value a real position at nothing, and a cost of zero is refused for the
+same reason: it would report the position as pure profit.
+
+**A return measured over fewer holdings than the value beside it says so.** A
+holding can be valued without having a cost, so the gain line carries "of 3"
+when it covers three of the four positions above it — otherwise it reads as the
+whole portfolio's return when it is not. The day's move and the return since
+purchase are labelled separately, because they answer different questions over
+different periods.
 
 A portfolio with no quantities at all shows **no total**, not a zero: having
 nothing to value is a different statement from being worth nothing.
@@ -427,7 +448,7 @@ trading decisions.
 lib/main.dart            App root, providers and theme wiring
 lib/models/
   types.dart             PricePoint, Candle, Quote, History, ChartWindow
-  holding.dart           A holding and its size; per-currency portfolio totals
+  holding.dart           A holding, its size and cost; per-currency totals
   alert.dart             PriceAlert and the pure firing logic (unit tested)
   crossover.dart         Which crossovers exist and what they are called
 lib/api/
@@ -451,7 +472,7 @@ lib/utils/
   format.dart            Price, change and date formatting
   chart.dart             Line and candle geometry, zoom limits (unit tested)
   indicators.dart        Moving averages, Wilder RSI, crossings (unit tested)
-  portfolio_csv.dart     Holdings and share counts from CSV (unit tested)
+  portfolio_csv.dart     Holdings, share counts and costs from CSV (tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
 test/                    Tests and payload fixtures
 ```

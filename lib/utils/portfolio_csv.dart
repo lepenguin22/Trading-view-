@@ -42,6 +42,26 @@ const _sharesLeadingWords = {
   'holdings',
 };
 
+/// Header names that mark the average-cost column exactly.
+const _costHeaders = {'cost', 'cost basis', 'book cost', 'price paid', 'paid'};
+
+/// First words that mark an average-cost column however it continues.
+///
+/// "Average price bought", "Avg cost", "Buy price", "Purchase price". This is
+/// a price *per share*, which is why a total-cost column must not be matched:
+/// "Principal invested" is the whole position, and reading it as a unit price
+/// would overstate the cost by a factor of the share count. Nor is the live
+/// price a cost — "Current stock price" leads with a word not listed here.
+const _costLeadingWords = {
+  'average',
+  'avg',
+  'cost',
+  'buy',
+  'bought',
+  'purchase',
+  'entry',
+};
+
 const _maxScanRows = 5000;
 
 /// Extracts the holdings from the first table in [csv].
@@ -75,7 +95,21 @@ List<Holding> parseHoldingsCsv(String csv) {
   final header = _findTickerColumn(rows);
   if (header == null) return const [];
 
-  final sharesColumn = _findSharesColumn(rows[header.row], header.column);
+  final headerRow = rows[header.row];
+  final sharesColumn = _findColumn(
+    headerRow,
+    exact: _sharesHeaders,
+    leading: _sharesLeadingWords,
+    skip: {header.column},
+  );
+  final costColumn = _findColumn(
+    headerRow,
+    exact: _costHeaders,
+    leading: _costLeadingWords,
+    // A column can only mean one thing: whichever kind claimed it first keeps
+    // it, so a quantity is never also read as a price.
+    skip: {header.column, ?sharesColumn},
+  );
 
   final seen = <String>{};
   final out = <Holding>[];
@@ -97,6 +131,9 @@ List<Holding> parseHoldingsCsv(String csv) {
         shares: sharesColumn == null
             ? null
             : parseShares(_cell(rows[r], sharesColumn)),
+        costPerShare: costColumn == null
+            ? null
+            : parseMoney(_cell(rows[r], costColumn)),
       ),
     );
   }
@@ -115,17 +152,23 @@ List<Holding> parseHoldingsCsv(String csv) {
   return null;
 }
 
-/// Locates a share-count column in the header row the tickers were found on.
+/// Locates a column in the header row the tickers were found on.
 ///
-/// Skips the ticker column itself, so a sheet whose ticker header happens to
-/// also match cannot map a column onto itself.
-int? _findSharesColumn(List<dynamic> headerRow, int tickerColumn) {
+/// Matches an [exact] header name, or one whose first word is in [leading].
+/// Columns in [skip] are already claimed by another kind, so a single column
+/// is never read as two different things.
+int? _findColumn(
+  List<dynamic> headerRow, {
+  required Set<String> exact,
+  required Set<String> leading,
+  required Set<int> skip,
+}) {
   for (var c = 0; c < headerRow.length; c++) {
-    if (c == tickerColumn) continue;
+    if (skip.contains(c)) continue;
     final value = _normaliseHeader(_cell(headerRow, c));
     if (value.isEmpty) continue;
-    if (_sharesHeaders.contains(value)) return c;
-    if (_sharesLeadingWords.contains(value.split(' ').first)) return c;
+    if (exact.contains(value)) return c;
+    if (leading.contains(value.split(' ').first)) return c;
   }
   return null;
 }
@@ -141,6 +184,17 @@ String _normaliseHeader(String raw) =>
 /// spaces, and sometimes a trailing unit. Anything that does not resolve to a
 /// finite number is null — an unreadable quantity must not become a zero, or a
 /// real position would silently value at nothing.
+/// Reads a money amount out of a spreadsheet cell.
+///
+/// Same tolerance as [parseShares], plus the currency marks a sheet writes
+/// prices with. Anything that does not resolve to a positive number is null: a
+/// cost of zero would report the whole position as pure profit.
+double? parseMoney(String raw) {
+  final value = parseShares(raw.replaceAll(RegExp(r'[^0-9.,()\s-]'), ''));
+  if (value == null || value <= 0) return null;
+  return value;
+}
+
 double? parseShares(String raw) {
   var text = raw.trim();
   if (text.isEmpty) return null;

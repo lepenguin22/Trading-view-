@@ -96,13 +96,16 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   /// Just the portfolio's symbols, for callers that do not care about size.
   List<String> get portfolioSymbols => [for (final h in _portfolio) h.symbol];
 
-  /// Shares held of [symbol], or null when the sheet did not say.
-  double? sharesOf(String symbol) {
+  /// The portfolio entry for [symbol], or null when it is not held.
+  Holding? holdingOf(String symbol) {
     for (final holding in _portfolio) {
-      if (holding.symbol == symbol) return holding.shares;
+      if (holding.symbol == symbol) return holding;
     }
     return null;
   }
+
+  /// Shares held of [symbol], or null when the sheet did not say.
+  double? sharesOf(String symbol) => holdingOf(symbol)?.shares;
 
   /// What the portfolio is worth, one entry per currency.
   ///
@@ -114,6 +117,9 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     final values = <String, double>{};
     final changes = <String, double>{};
     final priced = <String, int>{};
+    final costs = <String, double>{};
+    final gains = <String, double>{};
+    final invested = <String, int>{};
     var unpriced = 0;
 
     for (final holding in _portfolio) {
@@ -128,6 +134,14 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
       changes[currency] =
           (changes[currency] ?? 0) + quote.change * holding.shares!;
       priced[currency] = (priced[currency] ?? 0) + 1;
+
+      // A holding with no cost still counts towards the value; it simply has
+      // no return to contribute, and the count below records that.
+      final cost = holding.costBasis;
+      if (cost == null) continue;
+      costs[currency] = (costs[currency] ?? 0) + cost;
+      gains[currency] = (gains[currency] ?? 0) + (value - cost);
+      invested[currency] = (invested[currency] ?? 0) + 1;
     }
 
     final totals = [
@@ -137,6 +151,9 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
           value: entry.value,
           dayChange: changes[entry.key] ?? 0,
           priced: priced[entry.key] ?? 0,
+          cost: costs[entry.key] ?? 0,
+          gain: gains[entry.key] ?? 0,
+          invested: invested[entry.key] ?? 0,
           // Every holding that could not be valued is reported against the
           // largest currency below, so it is stated exactly once.
           unpriced: 0,
@@ -144,12 +161,16 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     ]..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
 
     if (totals.isEmpty || unpriced == 0) return totals;
+    final first = totals.first;
     return [
       PortfolioTotal(
-        currency: totals.first.currency,
-        value: totals.first.value,
-        dayChange: totals.first.dayChange,
-        priced: totals.first.priced,
+        currency: first.currency,
+        value: first.value,
+        dayChange: first.dayChange,
+        priced: first.priced,
+        cost: first.cost,
+        gain: first.gain,
+        invested: first.invested,
         unpriced: unpriced,
       ),
       ...totals.skip(1),
@@ -389,7 +410,13 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     for (final raw in holdings) {
       final symbol = normaliseSymbol(raw.symbol);
       if (symbol.isEmpty || !taken.add(symbol)) continue;
-      next.add(Holding(symbol: symbol, shares: raw.shares));
+      next.add(
+        Holding(
+          symbol: symbol,
+          shares: raw.shares,
+          costPerShare: raw.costPerShare,
+        ),
+      );
     }
 
     final previous = {for (final h in _portfolio) h.symbol};

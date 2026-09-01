@@ -276,7 +276,10 @@ class _SymbolListView extends StatelessWidget {
                   quote: model.quotes[symbol],
                   error: model.errors[symbol],
                   shares: list == SymbolList.portfolio
-                      ? model.sharesOf(symbol)
+                      ? model.holdingOf(symbol)?.shares
+                      : null,
+                  costPerShare: list == SymbolList.portfolio
+                      ? model.holdingOf(symbol)?.costPerShare
                       : null,
                   hasAlert: context.watch<AlertsModel>().hasArmed(symbol),
                   onTap: () => Navigator.of(context).push(
