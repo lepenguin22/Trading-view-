@@ -489,10 +489,38 @@ shapes are simple and it keeps the dependency list and the app size down.
 One `YahooApi` is provided to the whole app, so the watchlist poll, the detail
 chart and search share a single HTTP client and its connection pool.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every pull request and every push to `main`:
+
+| Job | What it does |
+| --- | --- |
+| **Analyze and test** | `dart format --set-exit-if-changed`, `flutter analyze --fatal-infos --fatal-warnings`, `flutter test` |
+| **Build APK** | `flutter build apk --release`, uploaded as a downloadable artifact |
+
+Formatting is a failure rather than a silent reformat, and analyzer infos are
+fatal alongside warnings — the project is clean today, and letting one through
+is how a codebase stops being clean.
+
+**The APK job is the point of this.** The test suite says the code is correct;
+only Gradle says the app still assembles. It is a release build because that is
+where builds actually break — minification and icon tree shaking do not run in
+debug — and the result is installable for testing on a device.
+
+**That artifact is not a store build.** `android/app/build.gradle.kts` falls
+back to the debug key when `android/key.properties` is absent, which is why
+this needs no secrets, and equally why the APK it produces must not be
+distributed. A real signed build still comes from a machine that has the
+keystore.
+
+The Flutter version is pinned so an upstream release cannot turn CI red on its
+own; bump it deliberately, with the suite run against the new version.
+
 ## Ideas for later
 
 - Server-side alert checking, so notifications are punctual rather than
   best-effort — the single biggest limitation of the current design
-- Holdings and cost basis, so the list shows gain/loss rather than day change
+- Volume bars under the price, from data the chart payload already carries
+- Portfolio weight per holding, now that values are known
 - Drag-to-reorder in place of the long-press sheet
 - A home screen widget
