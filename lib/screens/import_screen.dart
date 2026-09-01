@@ -61,11 +61,11 @@ class _ImportScreenState extends State<ImportScreen> {
     });
 
     try {
-      final symbols = await _source.fetchSymbols(url);
+      final holdings = await _source.fetchHoldings(url);
       if (!mounted) return;
 
       final outcome = await context.read<WatchlistModel>().importPortfolio(
-        symbols,
+        holdings,
       );
       if (!mounted) return;
 

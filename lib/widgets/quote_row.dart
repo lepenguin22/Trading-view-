@@ -19,6 +19,7 @@ class QuoteRow extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     this.hasAlert = false,
+    this.shares,
   });
 
   final String symbol;
@@ -33,6 +34,11 @@ class QuoteRow extends StatelessWidget {
   /// Shows a small bell beside the symbol when an armed alert is set on it.
   final bool hasAlert;
 
+  /// Shares held, on the portfolio list. Null on the watchlist, and null for
+  /// a holding whose sheet did not state a quantity — in which case the row
+  /// shows no value rather than implying one.
+  final double? shares;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -44,10 +50,15 @@ class QuoteRow extends StatelessWidget {
     // just labelled so nobody mistakes it for a live price.
     final stale = error != null && q != null;
 
+    final held = shares;
+    final value = q == null || held == null ? null : held * q.price;
+
     final label = q != null
         ? '$symbol, ${q.name}, ${formatPrice(q.price, q.currency)}, '
               '${change >= 0 ? 'up' : 'down'} '
               '${q.changePercent.abs().toStringAsFixed(2)} percent'
+              '${value == null ? '' : ', holding worth '
+                        '${formatValue(value, q.currency)}'}'
               '${stale ? ', last known price' : ''}'
               '${hasAlert ? ', price alert set' : ''}'
         : '$symbol, ${error ?? 'loading'}';
@@ -111,6 +122,21 @@ class QuoteRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(color: c.textMuted, fontSize: 13),
                       ),
+                      if (held != null) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          value == null
+                              ? '${formatShares(held)} shares'
+                              : '${formatShares(held)} shares · '
+                                    '${formatValue(value, q!.currency)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: tabularFigures.copyWith(
+                            color: c.textFaint,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

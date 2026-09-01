@@ -31,6 +31,43 @@ String formatPrice(double value, [String currency = 'USD']) {
   ).format(amount);
 }
 
+/// Formats a share count.
+///
+/// Whole numbers lose their decimals — "12 shares", not "12.00 shares" — while
+/// a fractional holding keeps enough precision to stay recognisable as itself.
+String formatShares(double shares) {
+  if (!shares.isFinite) return '—';
+  final whole = shares == shares.roundToDouble();
+  return NumberFormat.decimalPatternDigits(decimalDigits: whole ? 0 : 4)
+      .format(shares);
+}
+
+/// Formats a portfolio value, which is always a whole-currency figure.
+///
+/// Unlike [formatPrice] this never widens to four decimals: a total is read
+/// for its magnitude, and sub-penny precision on a five-figure sum is noise.
+String formatValue(double value, [String currency = 'USD']) {
+  if (!value.isFinite) return '—';
+
+  final minor = _minorUnitCurrencies[currency];
+  final amount = minor != null ? value / minor.divisor : value;
+  final code = minor != null ? minor.major : currency;
+
+  final symbol = NumberFormat.simpleCurrency(name: code).currencySymbol;
+  return NumberFormat.currency(symbol: symbol, decimalDigits: 2).format(amount);
+}
+
+/// Formats a signed money amount, e.g. a day change in a portfolio's currency.
+String formatSignedValue(double value, [String currency = 'USD']) {
+  if (!value.isFinite) return '—';
+  final sign = value > 0
+      ? '+'
+      : value < 0
+      ? '−'
+      : '';
+  return '$sign${formatValue(value.abs(), currency)}';
+}
+
 /// Formats an already-scaled axis value. No currency symbol: the axis repeats
 /// its label at every gridline and the currency is in the header, so carrying
 /// it here would widen the gutter for no information. [decimals] is chosen for

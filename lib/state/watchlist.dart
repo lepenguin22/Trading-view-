@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import '../api/yahoo.dart';
+import '../models/holding.dart';
 import '../models/types.dart';
 import '../utils/format.dart';
 import 'refresh_policy.dart';
@@ -56,7 +57,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   final WatchlistStorage _storage;
 
   List<String> _symbols = const [];
-  List<String> _portfolio = const [];
+  List<Holding> _portfolio = const [];
   Map<String, Quote> _quotes = const {};
   Map<String, String> _errors = const {};
   bool _hydrating = true;
@@ -90,11 +91,74 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   List<String> get symbols => List.unmodifiable(_symbols);
 
   /// Holdings imported from a spreadsheet, kept apart from the watchlist.
-  List<String> get portfolio => List.unmodifiable(_portfolio);
+  List<Holding> get portfolio => List.unmodifiable(_portfolio);
+
+  /// Just the portfolio's symbols, for callers that do not care about size.
+  List<String> get portfolioSymbols => [for (final h in _portfolio) h.symbol];
+
+  /// Shares held of [symbol], or null when the sheet did not say.
+  double? sharesOf(String symbol) {
+    for (final holding in _portfolio) {
+      if (holding.symbol == symbol) return holding.shares;
+    }
+    return null;
+  }
+
+  /// What the portfolio is worth, one entry per currency.
+  ///
+  /// Never summed across currencies: converting pounds to dollars needs a rate
+  /// this app does not have, and one invented number would be worse than two
+  /// honest ones. Ordered by value, largest first, so the currency that
+  /// dominates the portfolio leads.
+  List<PortfolioTotal> get portfolioTotals {
+    final values = <String, double>{};
+    final changes = <String, double>{};
+    final priced = <String, int>{};
+    var unpriced = 0;
+
+    for (final holding in _portfolio) {
+      final quote = _quotes[holding.symbol];
+      final value = quote == null ? null : holding.valueAt(quote.price);
+      if (quote == null || value == null) {
+        unpriced++;
+        continue;
+      }
+      final currency = quote.currency.isEmpty ? 'USD' : quote.currency;
+      values[currency] = (values[currency] ?? 0) + value;
+      changes[currency] =
+          (changes[currency] ?? 0) + quote.change * holding.shares!;
+      priced[currency] = (priced[currency] ?? 0) + 1;
+    }
+
+    final totals = [
+      for (final entry in values.entries)
+        PortfolioTotal(
+          currency: entry.key,
+          value: entry.value,
+          dayChange: changes[entry.key] ?? 0,
+          priced: priced[entry.key] ?? 0,
+          // Every holding that could not be valued is reported against the
+          // largest currency below, so it is stated exactly once.
+          unpriced: 0,
+        ),
+    ]..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
+
+    if (totals.isEmpty || unpriced == 0) return totals;
+    return [
+      PortfolioTotal(
+        currency: totals.first.currency,
+        value: totals.first.value,
+        dayChange: totals.first.dayChange,
+        priced: totals.first.priced,
+        unpriced: unpriced,
+      ),
+      ...totals.skip(1),
+    ];
+  }
 
   /// Every symbol needing a quote. Both lists are polled together and share
   /// one quote map, so a symbol on both is fetched once.
-  List<String> get _tracked => {..._symbols, ..._portfolio}.toList();
+  List<String> get _tracked => {..._symbols, ...portfolioSymbols}.toList();
 
   Map<String, Quote> get quotes => Map.unmodifiable(_quotes);
 
@@ -111,8 +175,10 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
 
   bool has(String symbol) => _symbols.contains(normaliseSymbol(symbol));
 
-  bool isInPortfolio(String symbol) =>
-      _portfolio.contains(normaliseSymbol(symbol));
+  bool isInPortfolio(String symbol) {
+    final wanted = normaliseSymbol(symbol);
+    return _portfolio.any((h) => h.symbol == wanted);
+  }
 
   /// Reads the persisted watchlist and cached quotes, then does a first
   /// refresh and starts polling.
@@ -317,25 +383,28 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   /// authority on what is held, and removing a holding because one request
   /// failed would be worse than showing it with an error; the failures are
   /// reported so the sheet can be corrected.
-  Future<ImportOutcome> importPortfolio(List<String> symbols) async {
-    final next = <String>[];
-    for (final raw in symbols) {
-      final symbol = normaliseSymbol(raw);
-      if (symbol.isNotEmpty && !next.contains(symbol)) next.add(symbol);
+  Future<ImportOutcome> importPortfolio(List<Holding> holdings) async {
+    final next = <Holding>[];
+    final taken = <String>{};
+    for (final raw in holdings) {
+      final symbol = normaliseSymbol(raw.symbol);
+      if (symbol.isEmpty || !taken.add(symbol)) continue;
+      next.add(Holding(symbol: symbol, shares: raw.shares));
     }
 
-    final previous = _portfolio;
+    final previous = {for (final h in _portfolio) h.symbol};
+    final nextSymbols = [for (final h in next) h.symbol];
     final outcome = ImportOutcome(
       added: [
-        for (final s in next)
+        for (final s in nextSymbols)
           if (!previous.contains(s)) s,
       ],
       removed: [
-        for (final s in previous)
-          if (!next.contains(s)) s,
+        for (final h in _portfolio)
+          if (!taken.contains(h.symbol)) h.symbol,
       ],
       unchanged: [
-        for (final s in next)
+        for (final s in nextSymbols)
           if (previous.contains(s)) s,
       ],
       failed: const {},
@@ -348,7 +417,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
     // Price whatever is not already known, so the rows fill in immediately
     // rather than waiting for the next poll.
     final unpriced = [
-      for (final s in next)
+      for (final s in nextSymbols)
         if (!_quotes.containsKey(s)) s,
     ];
     if (unpriced.isEmpty || _disposed) return outcome;
@@ -383,7 +452,9 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
   /// A convenience for hiding something now; the sheet still decides, so it
   /// returns on the next import unless it is deleted there too.
   void removeFromPortfolio(String symbol) {
-    final next = _portfolio.where((s) => s != symbol).toList(growable: false);
+    final next = _portfolio
+        .where((h) => h.symbol != symbol)
+        .toList(growable: false);
     if (next.length == _portfolio.length) return;
     _portfolio = next;
     notifyListeners();

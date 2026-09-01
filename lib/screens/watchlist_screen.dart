@@ -5,6 +5,7 @@ import '../state/alerts.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../widgets/portfolio_summary.dart';
 import '../widgets/quote_row.dart';
 import 'alerts_screen.dart';
 import 'detail_screen.dart';
@@ -230,7 +231,7 @@ class _SymbolListView extends StatelessWidget {
     final model = context.watch<WatchlistModel>();
     final symbols = list == SymbolList.watchlist
         ? model.symbols
-        : model.portfolio;
+        : model.portfolioSymbols;
 
     return RefreshIndicator(
       onRefresh: model.refresh,
@@ -246,7 +247,7 @@ class _SymbolListView extends StatelessWidget {
                   SizedBox(height: index == 0 ? 0 : 8),
               itemBuilder: (context, index) {
                 if (index == 0) {
-                  return model.lastUpdated == null
+                  final updated = model.lastUpdated == null
                       ? const SizedBox.shrink()
                       : Padding(
                           padding: const EdgeInsets.only(bottom: 10),
@@ -259,6 +260,14 @@ class _SymbolListView extends StatelessWidget {
                             style: TextStyle(color: c.textFaint, fontSize: 12),
                           ),
                         );
+                  if (list == SymbolList.watchlist) return updated;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      PortfolioSummary(totals: model.portfolioTotals),
+                      updated,
+                    ],
+                  );
                 }
 
                 final symbol = symbols[index - 1];
@@ -266,6 +275,9 @@ class _SymbolListView extends StatelessWidget {
                   symbol: symbol,
                   quote: model.quotes[symbol],
                   error: model.errors[symbol],
+                  shares: list == SymbolList.portfolio
+                      ? model.sharesOf(symbol)
+                      : null,
                   hasAlert: context.watch<AlertsModel>().hasArmed(symbol),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(

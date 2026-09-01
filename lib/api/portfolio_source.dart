@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
+import '../models/holding.dart';
 import '../utils/portfolio_csv.dart';
 import 'yahoo.dart' show NetworkException;
 
@@ -25,10 +26,10 @@ class PortfolioSource {
 
   void dispose() => _client.close();
 
-  /// Reads [url] and returns the tickers in its holdings table.
+  /// Reads [url] and returns the holdings in its first table.
   ///
   /// Throws [NetworkException] with a message fit to show the user.
-  Future<List<String>> fetchSymbols(String url) async {
+  Future<List<Holding>> fetchHoldings(String url) async {
     final uri = parseSheetUrl(url);
     if (uri == null) {
       throw const NetworkException(
@@ -78,14 +79,14 @@ class PortfolioSource {
       );
     }
 
-    final symbols = parseHoldingsCsv(body);
-    if (symbols.isEmpty) {
+    final holdings = parseHoldingsCsv(body);
+    if (holdings.isEmpty) {
       throw const NetworkException(
         'No ticker column found. The sheet needs a column headed '
         '"Ticker" or "Symbol".',
       );
     }
-    return symbols;
+    return holdings;
   }
 }
 

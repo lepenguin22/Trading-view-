@@ -146,8 +146,7 @@ class _AlertTile extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${alert.direction.phrase} '
-                        '${formatPrice(alert.threshold, alert.currency)}',
+                        alert.condition((v) => formatPrice(v, alert.currency)),
                         style: TextStyle(color: c.textMuted, fontSize: 13),
                       ),
                       if (alert.hasTriggered) ...[

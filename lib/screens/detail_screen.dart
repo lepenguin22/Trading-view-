@@ -888,8 +888,7 @@ class _AlertRow extends StatelessWidget {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                '${alert.direction.phrase} '
-                '${formatPrice(alert.threshold, alert.currency)}'
+                '${alert.condition((v) => formatPrice(v, alert.currency))}'
                 '${alert.hasTriggered ? ' · fired' : ''}',
                 style: TextStyle(
                   color: armed ? c.text : c.textMuted,

@@ -2,11 +2,13 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/holding.dart';
 import '../models/types.dart';
 
 const _symbolsKey = 'ticker.watchlist.symbols.v1';
 const _sheetUrlKey = 'ticker.portfolio.sheetUrl.v1';
 const _portfolioKey = 'ticker.portfolio.symbols.v1';
+const _holdingsKey = 'ticker.portfolio.holdings.v1';
 const _quotesKey = 'ticker.watchlist.quotes.v1';
 
 /// Written by the removed fair-value feature. Purged on launch: the first is
@@ -71,24 +73,50 @@ class WatchlistStorage {
   /// The imported portfolio. Kept separate from the watchlist: one is what the
   /// user chose to follow, the other is what a spreadsheet says they own, and
   /// an import rewrites the second without touching the first.
-  Future<List<String>> loadPortfolio() async {
+  /// Reads the portfolio, falling back to the symbols-only key an older
+  /// install wrote.
+  ///
+  /// The fallback matters: a portfolio was a bare list of symbols before
+  /// quantities existed, and reading only the new key would silently empty the
+  /// list of anyone upgrading. Those holdings come back with no share count,
+  /// which is exactly true of them until the sheet is imported again.
+  Future<List<Holding>> loadPortfolio() async {
     try {
-      final raw = (await _prefs).getString(_portfolioKey);
-      if (raw == null) return const [];
-      final parsed = jsonDecode(raw);
+      final prefs = await _prefs;
+
+      final raw = prefs.getString(_holdingsKey);
+      if (raw != null) {
+        final parsed = jsonDecode(raw);
+        if (parsed is! List) return const [];
+        return [for (final entry in parsed) ?Holding.fromJson(entry)];
+      }
+
+      final legacy = prefs.getString(_portfolioKey);
+      if (legacy == null) return const [];
+      final parsed = jsonDecode(legacy);
       if (parsed is! List) return const [];
-      return parsed
-          .whereType<String>()
-          .where((s) => s.isNotEmpty)
-          .toList(growable: false);
+      return [
+        for (final symbol in parsed.whereType<String>())
+          if (symbol.isNotEmpty) Holding(symbol: symbol),
+      ];
     } catch (_) {
       return const [];
     }
   }
 
-  Future<void> savePortfolio(List<String> symbols) async {
+  Future<void> savePortfolio(List<Holding> holdings) async {
     try {
-      await (await _prefs).setString(_portfolioKey, jsonEncode(symbols));
+      final prefs = await _prefs;
+      await prefs.setString(
+        _holdingsKey,
+        jsonEncode([for (final h in holdings) h.toJson()]),
+      );
+      // The old key is kept in step rather than deleted, so downgrading to a
+      // build without quantities still finds a portfolio.
+      await prefs.setString(
+        _portfolioKey,
+        jsonEncode([for (final h in holdings) h.symbol]),
+      );
     } catch (_) {
       // Ignore: the in-memory list is still correct for this session.
     }
