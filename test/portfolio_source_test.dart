@@ -37,10 +37,13 @@ void main() {
     });
   });
 
-  group('fetchSymbols', () {
+  group('fetchHoldings', () {
     test('returns the holdings from a published sheet', () async {
-      final symbols = await sourceReturning(sheet).fetchSymbols(url);
-      expect(symbols, ['AAA', 'BBB', 'CCC', 'DDD.L', 'BRK-B']);
+      final holdings = await sourceReturning(sheet).fetchHoldings(url);
+      expect(
+        [for (final h in holdings) h.symbol],
+        ['AAA', 'BBB', 'CCC', 'DDD.L', 'BRK-B'],
+      );
     });
 
     test(
@@ -50,7 +53,7 @@ void main() {
         // so the body has to be inspected, not just the status code.
         await expectLater(
           sourceReturning('<!doctype html><html><body>Sign in</body></html>')
-              .fetchSymbols(url),
+              .fetchHoldings(url),
           throwsA(
             isA<NetworkException>().having(
               (e) => e.message,
@@ -64,7 +67,7 @@ void main() {
 
     test('reports a 403 as a permissions problem', () async {
       await expectLater(
-        sourceReturning('', status: 403).fetchSymbols(url),
+        sourceReturning('', status: 403).fetchHoldings(url),
         throwsA(
           isA<NetworkException>().having(
             (e) => e.message,
@@ -77,7 +80,7 @@ void main() {
 
     test('reports a missing sheet', () async {
       await expectLater(
-        sourceReturning('', status: 404).fetchSymbols(url),
+        sourceReturning('', status: 404).fetchHoldings(url),
         throwsA(
           isA<NetworkException>().having(
             (e) => e.message,
@@ -90,7 +93,7 @@ void main() {
 
     test('says so when there is no ticker column', () async {
       await expectLater(
-        sourceReturning('Name,Value\nCash,100\n').fetchSymbols(url),
+        sourceReturning('Name,Value\nCash,100\n').fetchHoldings(url),
         throwsA(
           isA<NetworkException>().having(
             (e) => e.message,
@@ -110,7 +113,7 @@ void main() {
         }),
       );
       await expectLater(
-        source.fetchSymbols('nonsense'),
+        source.fetchHoldings('nonsense'),
         throwsA(isA<NetworkException>()),
       );
       expect(called, isFalse);
@@ -120,7 +123,7 @@ void main() {
       final huge = 'Ticker\n${'AAAA\n' * 500000}';
       expect(huge.length, greaterThan(PortfolioSource.maxBytes));
       await expectLater(
-        sourceReturning(huge).fetchSymbols(url),
+        sourceReturning(huge).fetchHoldings(url),
         throwsA(
           isA<NetworkException>().having(
             (e) => e.message,
@@ -136,7 +139,7 @@ void main() {
         client: MockClient((_) async => throw http.ClientException('offline')),
       );
       await expectLater(
-        source.fetchSymbols(url),
+        source.fetchHoldings(url),
         throwsA(
           isA<NetworkException>().having(
             (e) => e.message,

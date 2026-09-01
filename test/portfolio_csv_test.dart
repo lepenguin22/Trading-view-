@@ -3,6 +3,12 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ticker/utils/portfolio_csv.dart';
 
+/// The parser returns holdings; most of these tests are about which tickers
+/// came out, so they compare symbols and leave quantities to their own group.
+List<String> symbolsIn(String csv) => [
+  for (final h in parseHoldingsCsv(csv)) h.symbol,
+];
+
 void main() {
   // Mirrors the layout of a real portfolio sheet — a note row above the
   // header, the table starting at column B rather than A, and a second table
@@ -12,7 +18,7 @@ void main() {
 
   group('parseHoldingsCsv', () {
     test('reads the holdings table, not the closed positions below it', () {
-      final symbols = parseHoldingsCsv(sheet);
+      final symbols = symbolsIn(sheet);
 
       expect(symbols, ['AAA', 'BBB', 'CCC', 'DDD.L', 'BRK-B']);
       // The realised-P/L table sits under a "Stock" header further down. It is
@@ -23,65 +29,158 @@ void main() {
     });
 
     test('does not mistake the overview totals for tickers', () {
-      final symbols = parseHoldingsCsv(sheet);
+      final symbols = symbolsIn(sheet);
       expect(symbols.any((s) => s.contains('24')), isFalse);
       expect(symbols, isNot(contains('OVERVIEW')));
     });
 
     test('finds the header even though it is not the first row or column', () {
       // Three rows of preamble and a leading blank column in the fixture.
-      expect(parseHoldingsCsv(sheet).first, 'AAA');
+      expect(symbolsIn(sheet).first, 'AAA');
     });
 
     test('upper-cases a lower-case ticker', () {
       // Hand-maintained sheets have entries like "tsm".
-      expect(parseHoldingsCsv(sheet), contains('CCC'));
+      expect(symbolsIn(sheet), contains('CCC'));
     });
 
     test('keeps exchange suffixes and class dashes intact', () {
-      final symbols = parseHoldingsCsv(sheet);
+      final symbols = symbolsIn(sheet);
       expect(symbols, contains('DDD.L'));
       expect(symbols, contains('BRK-B'));
     });
 
     test('accepts Symbol as the header name too', () {
       const csv = 'Symbol,Shares\nAAPL,10\nMSFT,5\n';
-      expect(parseHoldingsCsv(csv), ['AAPL', 'MSFT']);
+      expect(symbolsIn(csv), ['AAPL', 'MSFT']);
     });
 
     test('drops duplicates but keeps sheet order', () {
       const csv = 'Ticker\nMSFT\nAAPL\nMSFT\nNVDA\n';
-      expect(parseHoldingsCsv(csv), ['MSFT', 'AAPL', 'NVDA']);
+      expect(symbolsIn(csv), ['MSFT', 'AAPL', 'NVDA']);
     });
 
     test('handles quoted fields containing commas', () {
       const csv = 'Ticker,Name,Value\nAAPL,"Apple, Inc.","1,234.56"\n';
-      expect(parseHoldingsCsv(csv), ['AAPL']);
+      expect(symbolsIn(csv), ['AAPL']);
     });
 
     test('handles CRLF line endings, which is what Sheets exports', () {
       const csv = 'Ticker,Shares\r\nAAPL,10\r\nMSFT,5\r\n';
-      expect(parseHoldingsCsv(csv), ['AAPL', 'MSFT']);
+      expect(symbolsIn(csv), ['AAPL', 'MSFT']);
     });
 
     test('returns empty when there is no ticker column to find', () {
       // Better to report "no column found" than to guess at some other column
       // and import nonsense.
       const csv = 'Name,Value\nSomething,10\n';
-      expect(parseHoldingsCsv(csv), isEmpty);
+      expect(symbolsIn(csv), isEmpty);
     });
 
     test('never matches a Stock header on its own', () {
       // The closed-positions table is headed "Stock"; matching it would import
       // sold holdings.
       const csv = 'Stock,P/L\nTSLA,-100\n';
-      expect(parseHoldingsCsv(csv), isEmpty);
+      expect(symbolsIn(csv), isEmpty);
     });
 
     test('survives empty and malformed input', () {
-      expect(parseHoldingsCsv(''), isEmpty);
-      expect(parseHoldingsCsv('   '), isEmpty);
-      expect(parseHoldingsCsv('Ticker\n'), isEmpty);
+      expect(symbolsIn(''), isEmpty);
+      expect(symbolsIn('   '), isEmpty);
+      expect(symbolsIn('Ticker\n'), isEmpty);
+    });
+  });
+
+  group('share counts', () {
+    test('reads the quantity column from the real sheet layout', () {
+      // The fixture's column is headed "Shares bought", not "Shares" — which
+      // is exactly why the match is on the leading word.
+      final holdings = parseHoldingsCsv(sheet);
+
+      expect(
+        {for (final h in holdings) h.symbol: h.shares},
+        {'AAA': 10.0, 'BBB': 5.0, 'CCC': 20.0, 'DDD.L': 40.0, 'BRK-B': 100.0},
+      );
+    });
+
+    test('a sheet with no quantity column still imports, without counts', () {
+      const csv = 'Ticker,Name\nAAPL,Apple\nMSFT,Microsoft\n';
+      final holdings = parseHoldingsCsv(csv);
+
+      expect([for (final h in holdings) h.symbol], ['AAPL', 'MSFT']);
+      expect(holdings.every((h) => h.shares == null), isTrue);
+    });
+
+    test('never reads a money column as a quantity', () {
+      // "Value of shares" mentions shares but holds currency. Reading it as a
+      // count would multiply a value by a price.
+      const csv = 'Ticker,Value of shares\nAAPL,"12,500.00"\n';
+
+      expect(parseHoldingsCsv(csv).single.shares, isNull);
+    });
+
+    test('accepts the header spellings sheets actually use', () {
+      for (final header in [
+        'Shares',
+        'Shares bought',
+        'Shares held',
+        'Quantity',
+        'Quantity owned',
+        'Qty',
+        'Units',
+        'No. of Shares',
+        'number of shares',
+      ]) {
+        expect(
+          parseHoldingsCsv('Ticker,$header\nAAPL,10\n').single.shares,
+          10,
+          reason: '"$header" should mark the quantity column',
+        );
+      }
+    });
+
+    test('an unreadable quantity is null, never zero', () {
+      // A zero would value a real position at nothing, which is worse than
+      // admitting the count is unknown.
+      const csv = 'Ticker,Shares\nAAPL,\nMSFT,n/a\nNVDA,—\n';
+
+      expect(parseHoldingsCsv(csv).every((h) => h.shares == null), isTrue);
+    });
+
+    test('a blank quantity does not end the table', () {
+      // Only a blank *ticker* ends it. A holding whose count was left out is
+      // still held.
+      const csv = 'Ticker,Shares\nAAPL,\nMSFT,5\n';
+      final holdings = parseHoldingsCsv(csv);
+
+      expect([for (final h in holdings) h.symbol], ['AAPL', 'MSFT']);
+      expect(holdings.last.shares, 5);
+    });
+  });
+
+  group('parseShares', () {
+    test('reads plain and thousands-separated numbers', () {
+      expect(parseShares('10'), 10);
+      expect(parseShares('1,250'), 1250);
+      expect(parseShares(' 42 '), 42);
+    });
+
+    test('keeps fractional shares', () {
+      expect(parseShares('0.5'), 0.5);
+      expect(parseShares('12.3456'), 12.3456);
+    });
+
+    test('reads a short position, in either notation', () {
+      expect(parseShares('-100'), -100);
+      expect(parseShares('(100)'), -100);
+    });
+
+    test('rejects anything that is not a number', () {
+      expect(parseShares(''), isNull);
+      expect(parseShares('   '), isNull);
+      expect(parseShares('n/a'), isNull);
+      expect(parseShares('ten'), isNull);
+      expect(parseShares('\$1,000'), isNull);
     });
   });
 

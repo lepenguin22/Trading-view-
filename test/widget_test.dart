@@ -15,7 +15,9 @@ import 'package:ticker/state/alerts.dart';
 import 'package:ticker/state/watchlist.dart';
 import 'package:ticker/theme/app_theme.dart';
 import 'package:ticker/models/crossover.dart';
+import 'package:ticker/models/holding.dart';
 import 'package:ticker/models/types.dart';
+import 'package:ticker/widgets/portfolio_summary.dart';
 import 'package:ticker/widgets/price_chart.dart';
 import 'package:ticker/widgets/rsi_pane.dart';
 
@@ -697,11 +699,14 @@ void main() {
       listen: false,
     );
 
-    final outcome = await model.importPortfolio(['MSFT', 'NVDA']);
+    final outcome = await model.importPortfolio([
+      Holding(symbol: 'MSFT'),
+      Holding(symbol: 'NVDA'),
+    ]);
     await tester.pumpAndSettle();
 
     expect(outcome.added, ['MSFT', 'NVDA']);
-    expect(model.portfolio, ['MSFT', 'NVDA']);
+    expect(model.portfolioSymbols, ['MSFT', 'NVDA']);
     // The watchlist is a separate list and an import must not touch it.
     expect(model.symbols, ['AAPL']);
 
@@ -723,16 +728,20 @@ void main() {
       tester.element(find.byType(WatchlistScreen)),
       listen: false,
     );
-    expect(model.portfolio, ['AAPL', 'MSFT', 'NVDA']);
+    expect(model.portfolioSymbols, ['AAPL', 'MSFT', 'NVDA']);
 
     // The sheet no longer lists NVDA, and now lists TSLA.
-    final outcome = await model.importPortfolio(['AAPL', 'MSFT', 'TSLA']);
+    final outcome = await model.importPortfolio([
+      Holding(symbol: 'AAPL'),
+      Holding(symbol: 'MSFT'),
+      Holding(symbol: 'TSLA'),
+    ]);
     await tester.pumpAndSettle();
 
     expect(outcome.added, ['TSLA']);
     expect(outcome.removed, ['NVDA'], reason: 'sold holdings must drop out');
     expect(outcome.unchanged, ['AAPL', 'MSFT']);
-    expect(model.portfolio, ['AAPL', 'MSFT', 'TSLA']);
+    expect(model.portfolioSymbols, ['AAPL', 'MSFT', 'TSLA']);
 
     await teardown(tester);
   });
@@ -748,12 +757,15 @@ void main() {
       listen: false,
     );
 
-    final outcome = await model.importPortfolio(['MSFT', 'NVDA']);
+    final outcome = await model.importPortfolio([
+      Holding(symbol: 'MSFT'),
+      Holding(symbol: 'NVDA'),
+    ]);
     await tester.pumpAndSettle();
 
     // The sheet is the authority on what is held; a failed request must not
     // delete a holding.
-    expect(model.portfolio, ['MSFT', 'NVDA']);
+    expect(model.portfolioSymbols, ['MSFT', 'NVDA']);
     expect(outcome.failed.keys, ['NVDA']);
 
     await teardown(tester);
@@ -804,6 +816,100 @@ void main() {
     await teardown(tester);
   });
 
+  testWidgets('the portfolio shows a total and per-row values', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10},{"symbol":"MSFT","shares":5}]',
+    });
+
+    // Every symbol resolves at 100, so 15 shares are worth 1,500.
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (2)'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PortfolioSummary), findsOneWidget);
+    expect(find.text('\$1,500.00'), findsOneWidget);
+    expect(find.text('2 holdings'), findsOneWidget);
+
+    // And each row states its own size and worth.
+    expect(find.textContaining('10 shares · \$1,000.00'), findsOneWidget);
+    expect(find.textContaining('5 shares · \$500.00'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the watchlist has no total, since it holds nothing', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+      'ticker.portfolio.holdings.v1': '[{"symbol":"MSFT","shares":5}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PortfolioSummary), findsNothing);
+    expect(find.textContaining('shares'), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a holding with no share count says so in the total', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10},{"symbol":"MSFT"}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (2)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('\$1,000.00'), findsOneWidget);
+    expect(find.text('1 holding'), findsOneWidget);
+    // Named rather than quietly left out of the sum.
+    expect(find.textContaining('1 holding not counted'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a portfolio with no quantities shows no total at all', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.symbols.v1': '["AAPL","MSFT"]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (2)'));
+    await tester.pumpAndSettle();
+
+    // A zero would claim the portfolio is worth nothing. The summary is built
+    // but renders nothing, so assert on what it draws rather than on whether
+    // the widget exists. The rows themselves are still listed.
+    expect(
+      find.descendant(
+        of: find.byType(PortfolioSummary),
+        matching: find.byType(Text),
+      ),
+      findsNothing,
+    );
+    expect(find.text('AAPL'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
   /// Pumps the import screen over a model built for the test.
   ///
   /// The model is created directly rather than lifted out of a TickerApp tree:
@@ -848,7 +954,7 @@ void main() {
 
     expect(find.text('Portfolio updated'), findsOneWidget);
     expect(find.textContaining('Added (3)'), findsOneWidget);
-    expect(model.portfolio, ['AAPL', 'MSFT', 'NVDA']);
+    expect(model.portfolioSymbols, ['AAPL', 'MSFT', 'NVDA']);
     expect(model.symbols, isEmpty, reason: 'the watchlist is untouched');
 
     model.dispose();
@@ -875,7 +981,7 @@ void main() {
     // Named, so the user knows which cell in the sheet to fix.
     expect(find.textContaining('NVDA —'), findsOneWidget);
     // Kept: the sheet says it is held, so a failed request must not drop it.
-    expect(model.portfolio, ['AAPL', 'MSFT', 'NVDA']);
+    expect(model.portfolioSymbols, ['AAPL', 'MSFT', 'NVDA']);
 
     model.dispose();
     await tester.pumpWidget(const SizedBox.shrink());
@@ -899,7 +1005,7 @@ void main() {
 
     expect(find.textContaining('Publish to web'), findsWidgets);
     // A failed fetch must never empty the portfolio.
-    expect(model.portfolio, isEmpty);
+    expect(model.portfolioSymbols, isEmpty);
 
     model.dispose();
     await tester.pumpWidget(const SizedBox.shrink());

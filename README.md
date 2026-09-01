@@ -6,7 +6,8 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
 ## What it does
 
 - **Two lists, side by side** — a **Watchlist** of symbols you chose to follow,
-  and a **Portfolio** mirrored from your spreadsheet. Both show live price,
+  and a **Portfolio** mirrored from your spreadsheet, with each holding's size
+  and market value and a total above the list. Both show live price,
   absolute and percentage day change, and a sparkline of the session. Pull to
   refresh; both re-poll together while the app is on screen, on the adaptive
   cadence described below.
@@ -222,6 +223,37 @@ the stock. Alerting on one would mean the background worker fetching daily
 history per symbol rather than just a quote — a considerably heavier job, and
 not what this does.
 
+## Position values and the portfolio total
+
+If your sheet has a quantity column beside the tickers, the Portfolio tab shows
+what each holding is worth and totals them above the list.
+
+The quantity column is found in the same header row as the tickers — never
+elsewhere in the sheet, so the closed-positions table below cannot contribute a
+number. It matches on the leading word, because real sheets write "Shares
+bought" and "Quantity owned" rather than a bare "Shares". A header that merely
+*mentions* shares later on is refused: "Value of shares" is money, and reading
+it as a count would multiply a value by a price.
+
+**Totals are kept per currency and never added across them.** Converting pounds
+to dollars needs an exchange rate this app does not have, and one invented
+number would be worse than two honest ones. A portfolio spanning exchanges gets
+a block per currency, largest first.
+
+**Nothing is quietly left out.** A holding with no share count, or one whose
+quote has not arrived, cannot be valued — so it is named under the total
+("2 holdings not counted") rather than silently dropped from a sum the user
+would otherwise trust. An unreadable quantity is never read as zero, which
+would value a real position at nothing.
+
+A portfolio with no quantities at all shows **no total**, not a zero: having
+nothing to value is a different statement from being worth nothing.
+
+Share counts live on the device alongside the tickers, and are sent nowhere —
+the price feed is asked about symbols, never about sizes. A portfolio saved by
+an older build, before quantities existed, still loads; those holdings simply
+have no count until the sheet is imported again.
+
 ## How often prices update
 
 There is no live tick feed here. Yahoo's chart endpoint is a request-response
@@ -369,6 +401,7 @@ trading decisions.
 lib/main.dart            App root, providers and theme wiring
 lib/models/
   types.dart             PricePoint, Candle, Quote, History, ChartWindow
+  holding.dart           A holding and its size; per-currency portfolio totals
   alert.dart             PriceAlert and the pure firing logic (unit tested)
   crossover.dart         Which crossovers exist and what they are called
 lib/api/
@@ -387,12 +420,12 @@ lib/notifications/
   notifications.dart     Local notification channel, permission and posting
 lib/screens/             Watchlist, Search, Detail, Alerts, Import
 lib/widgets/             QuoteRow, PriceChart, RsiPane, Sparkline, ChangePill,
-                         AlertSheet
+                         AlertSheet, PortfolioSummary
 lib/utils/
   format.dart            Price, change and date formatting
   chart.dart             Line and candle geometry, zoom limits (unit tested)
   indicators.dart        Moving averages, Wilder RSI, crossings (unit tested)
-  portfolio_csv.dart     Holdings-table extraction from CSV (unit tested)
+  portfolio_csv.dart     Holdings and share counts from CSV (unit tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
 test/                    Tests and payload fixtures
 ```
