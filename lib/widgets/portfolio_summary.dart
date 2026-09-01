@@ -83,7 +83,11 @@ class _Total extends StatelessWidget {
         '${formatValue(total.value, total.currency)}'
         '${showCurrency ? ' ${total.currency}' : ''}, '
         '${change >= 0 ? 'up' : 'down'} '
-        '${formatValue(change.abs(), total.currency)} today';
+        '${formatValue(change.abs(), total.currency)} today'
+        '${total.hasGain ? ', ${total.gain >= 0 ? 'up' : 'down'} '
+                  '${formatValue(total.gain.abs(), total.currency)} since bought'
+                  '${total.gainCoversEverything ? '' : ', over '
+                            '${total.invested} of ${total.priced} holdings'}' : ''}';
 
     return Semantics(
       label: label,
@@ -134,8 +138,60 @@ class _Total extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              Text(
+                ' today',
+                style: TextStyle(color: c.textFaint, fontSize: 12),
+              ),
             ],
           ),
+          if (total.hasGain) _gain(context, total),
+        ],
+      ),
+    );
+  }
+
+  /// The return since purchase, under the day's move.
+  ///
+  /// Named "since bought" rather than left to sit beside the day change, which
+  /// is a different question over a different period; two unlabelled signed
+  /// numbers in a column would be read as one.
+  Widget _gain(BuildContext context, PortfolioTotal total) {
+    final c = context.colors;
+    final percent = total.gainPercent;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Text(
+            'Since bought',
+            style: TextStyle(color: c.textMuted, fontSize: 12),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              percent == null
+                  ? formatSignedValue(total.gain, total.currency)
+                  : '${formatSignedValue(total.gain, total.currency)} '
+                        '(${formatPercent(percent)})',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tabularFigures.copyWith(
+                color: c.trend(total.gain),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          // A return measured over fewer holdings than the value above it must
+          // say so, or it reads as the whole portfolio's.
+          if (!total.gainCoversEverything) ...[
+            const SizedBox(width: 6),
+            Text(
+              'of ${total.invested}',
+              style: TextStyle(color: c.textFaint, fontSize: 12),
+            ),
+          ],
         ],
       ),
     );

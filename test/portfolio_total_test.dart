@@ -215,6 +215,138 @@ void main() {
     });
   });
 
+  group('gain since purchase', () {
+    test('totals cost and gain alongside value', () async {
+      final model = await modelWith(
+        [
+          const Holding(symbol: 'AAA', shares: 10, costPerShare: 80),
+          const Holding(symbol: 'BBB', shares: 5, costPerShare: 250),
+        ],
+        {
+          'AAA': (price: 100, prev: 100, currency: 'USD'),
+          'BBB': (price: 200, prev: 200, currency: 'USD'),
+        },
+      );
+
+      final total = model.portfolioTotals.single;
+      // Paid 10x80 + 5x250 = 2050; now worth 10x100 + 5x200 = 2000.
+      expect(total.cost, 2050);
+      expect(total.value, 2000);
+      expect(total.gain, closeTo(-50, 0.001));
+      expect(total.gainPercent, closeTo(-50 / 2050 * 100, 0.001));
+      expect(total.invested, 2);
+      expect(total.gainCoversEverything, isTrue);
+
+      model.dispose();
+    });
+
+    test(
+      'a holding with no cost is valued but excluded from the gain',
+      () async {
+        final model = await modelWith(
+          [
+            const Holding(symbol: 'AAA', shares: 10, costPerShare: 80),
+            const Holding(symbol: 'BBB', shares: 5),
+          ],
+          {
+            'AAA': (price: 100, prev: 100, currency: 'USD'),
+            'BBB': (price: 200, prev: 200, currency: 'USD'),
+          },
+        );
+
+        final total = model.portfolioTotals.single;
+        // Both count towards the value.
+        expect(total.value, 2000);
+        expect(total.priced, 2);
+        // Only the one with a cost has a return.
+        expect(total.cost, 800);
+        expect(total.gain, closeTo(200, 0.001));
+        expect(total.invested, 1);
+        // And the UI must say the gain covers less than the value does.
+        expect(total.gainCoversEverything, isFalse);
+
+        model.dispose();
+      },
+    );
+
+    test('no costs at all means no gain to show', () async {
+      final model = await modelWith(
+        [const Holding(symbol: 'AAA', shares: 10)],
+        {'AAA': (price: 100, prev: 100, currency: 'USD')},
+      );
+
+      final total = model.portfolioTotals.single;
+      expect(total.hasGain, isFalse);
+      expect(total.gainPercent, isNull);
+
+      model.dispose();
+    });
+
+    test('gains are kept per currency, like values', () async {
+      final model = await modelWith(
+        [
+          const Holding(symbol: 'AAA', shares: 10, costPerShare: 50),
+          const Holding(symbol: 'BBB', shares: 2, costPerShare: 100),
+        ],
+        {
+          'AAA': (price: 100, prev: 100, currency: 'USD'),
+          'BBB': (price: 300, prev: 300, currency: 'GBP'),
+        },
+      );
+
+      final totals = model.portfolioTotals;
+      expect(
+        {for (final t in totals) t.currency: t.gain},
+        {'USD': 500.0, 'GBP': 400.0},
+      );
+
+      model.dispose();
+    });
+  });
+
+  group('Holding gain maths', () {
+    test('cost basis is per share times the count', () {
+      const holding = Holding(symbol: 'AAA', shares: 10, costPerShare: 25);
+
+      expect(holding.costBasis, 250);
+      expect(holding.gainAt(30), 50);
+      expect(holding.gainAt(20), -50);
+    });
+
+    test('an unknown half means an unknown answer, not a zero', () {
+      expect(const Holding(symbol: 'A', shares: 10).costBasis, isNull);
+      expect(const Holding(symbol: 'A', costPerShare: 10).costBasis, isNull);
+      expect(const Holding(symbol: 'A', shares: 10).gainAt(50), isNull);
+    });
+
+    test('a cost round-trips through storage', () {
+      const original = Holding(symbol: 'AAA', shares: 10, costPerShare: 12.5);
+
+      expect(Holding.fromJson(original.toJson()), original);
+    });
+
+    test('a stored cost of zero or less is rejected on load', () {
+      // A zero would report the position as pure profit.
+      expect(
+        Holding.fromJson({'symbol': 'A', 'shares': 1, 'costPerShare': 0})
+            ?.costPerShare,
+        isNull,
+      );
+      expect(
+        Holding.fromJson({'symbol': 'A', 'shares': 1, 'costPerShare': -5})
+            ?.costPerShare,
+        isNull,
+      );
+    });
+
+    test('a holding saved before costs existed loads without one', () {
+      expect(
+        Holding.fromJson({'symbol': 'AAA', 'shares': 10}),
+        const Holding(symbol: 'AAA', shares: 10),
+      );
+    });
+  });
+
   group('holdings storage', () {
     test('round-trips share counts', () async {
       SharedPreferences.setMockInitialValues({});

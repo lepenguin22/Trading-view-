@@ -20,6 +20,7 @@ class QuoteRow extends StatelessWidget {
     required this.onLongPress,
     this.hasAlert = false,
     this.shares,
+    this.costPerShare,
   });
 
   final String symbol;
@@ -39,6 +40,10 @@ class QuoteRow extends StatelessWidget {
   /// shows no value rather than implying one.
   final double? shares;
 
+  /// Average price paid, when the sheet has a cost column. Drives the return
+  /// shown beside the position's value.
+  final double? costPerShare;
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -52,6 +57,12 @@ class QuoteRow extends StatelessWidget {
 
     final held = shares;
     final value = q == null || held == null ? null : held * q.price;
+    final paid = costPerShare;
+    final cost = held == null || paid == null ? null : held * paid;
+    final gain = value == null || cost == null ? null : value - cost;
+    final gainPercent = gain == null || cost == null || cost == 0
+        ? null
+        : gain / cost * 100;
 
     final label = q != null
         ? '$symbol, ${q.name}, ${formatPrice(q.price, q.currency)}, '
@@ -59,6 +70,8 @@ class QuoteRow extends StatelessWidget {
               '${q.changePercent.abs().toStringAsFixed(2)} percent'
               '${value == null ? '' : ', holding worth '
                         '${formatValue(value, q.currency)}'}'
+              '${gain == null ? '' : ', ${gain >= 0 ? 'up' : 'down'} '
+                        '${formatValue(gain.abs(), q.currency)} since bought'}'
               '${stale ? ', last known price' : ''}'
               '${hasAlert ? ', price alert set' : ''}'
         : '$symbol, ${error ?? 'loading'}';
@@ -124,17 +137,45 @@ class QuoteRow extends StatelessWidget {
                       ),
                       if (held != null) ...[
                         const SizedBox(height: 3),
-                        Text(
-                          value == null
-                              ? '${formatShares(held)} shares'
-                              : '${formatShares(held)} shares · '
-                                    '${formatValue(value, q!.currency)}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: tabularFigures.copyWith(
-                            color: c.textFaint,
-                            fontSize: 12,
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                value == null
+                                    ? '${formatShares(held)} shares'
+                                    : '${formatShares(held)} shares · '
+                                          '${formatValue(value, q!.currency)}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: tabularFigures.copyWith(
+                                  color: c.textFaint,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            // The return since purchase is coloured because it
+                            // is the number with a good and a bad direction;
+                            // the value beside it has neither.
+                            if (gain != null && gainPercent != null) ...[
+                              Text(
+                                ' · ',
+                                style: TextStyle(
+                                  color: c.textFaint,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              Text(
+                                formatPercent(gainPercent),
+                                maxLines: 1,
+                                style: tabularFigures.copyWith(
+                                  color: stale ? c.textFaint : c.trend(gain),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
                     ],

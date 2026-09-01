@@ -1,0 +1,89 @@
+name: CI
+
+# Runs the same checks a contributor runs locally, so a pull request is
+# verified by the repository rather than by whoever opened it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push supersedes an in-flight run on the same branch: only the head
+# commit's result is worth waiting for.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze-and-test:
+    name: Analyze and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # Pinned so a Flutter release cannot turn CI red on its own. Bump it
+          # deliberately, with the tests run against the new version.
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Check formatting
+        # --set-exit-if-changed makes unformatted code a failure rather than a
+        # silent reformat that never reaches the diff.
+        run: dart format --set-exit-if-changed lib test
+
+      - name: Analyze
+        # Warnings are failures here: the project is clean today, and letting
+        # one through is how a codebase stops being clean.
+        run: flutter analyze --fatal-infos --fatal-warnings
+
+      - name: Test
+        run: flutter test
+
+  build-apk:
+    name: Build APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Only worth the Gradle cost once the cheap checks have passed.
+    needs: analyze-and-test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK
+        # Release rather than debug: it exercises minification and icon tree
+        # shaking, which is where a build actually breaks, and the result is
+        # installable for testing. android/app/build.gradle.kts falls back to
+        # the debug key when key.properties is absent, so this needs no secret
+        # — and for the same reason the artifact is NOT for distribution.
+        run: flutter build apk --release
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          # Named for what it is: debug-signed, so it installs for testing but
+          # is not a store build.
+          name: app-release-debugsigned-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
