@@ -3,10 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../api/yahoo.dart';
 import '../models/alert.dart';
+import '../models/crossover.dart';
 import '../models/types.dart';
-import '../models/valuation.dart';
 import '../state/alerts.dart';
-import '../state/valuation_store.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/chart.dart';
@@ -16,7 +15,6 @@ import '../widgets/alert_sheet.dart';
 import '../widgets/change_pill.dart';
 import '../widgets/price_chart.dart';
 import '../widgets/rsi_pane.dart';
-import 'settings_screen.dart';
 
 class DetailScreen extends StatefulWidget {
   const DetailScreen({super.key, required this.symbol});
@@ -51,10 +49,21 @@ class _DetailScreenState extends State<DetailScreen> {
   Map<int, List<double?>> _mas = const {};
   List<double?> _rsi = const [];
 
+  /// Crossings per spec id, computed alongside the moving averages they are
+  /// derived from.
+  Map<String, List<Crossing>> _crosses = const {};
+
   /// Which moving averages are drawn. All on by default; a period with no
   /// data for the range is shown greyed rather than hidden, so it is obvious
   /// the range is too short rather than the line silently missing.
   final Set<int> _visibleMas = {...maPeriods};
+
+  /// Which crossovers are marked. All on by default: the user chose which
+  /// crossovers exist, so switching them off by default would hide the
+  /// feature behind a control they would have to find first.
+  final Set<String> _visibleCrosses = {
+    for (final spec in crossoverSpecs) spec.id,
+  };
 
   CancelToken? _inFlight;
 
@@ -64,9 +73,6 @@ class _DetailScreenState extends State<DetailScreen> {
     _load();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      // Lazy and cached: opening a stock is the only thing that spends a
-      // valuation request, and only when the cached copy has expired.
-      context.read<ValuationModel>().ensureLoaded(widget.symbol);
       // While this screen is open its symbol is polled faster than the lists.
       context.read<WatchlistModel>().focusOn(widget.symbol);
     });
@@ -113,6 +119,10 @@ class _DetailScreenState extends State<DetailScreen> {
             period: simpleMovingAverage(closes, period),
         };
         _rsi = relativeStrengthIndex(closes, rsiPeriod);
+        _crosses = {
+          for (final spec in crossoverSpecs)
+            spec.id: crossingsFor(spec, closes: closes, movingAverages: _mas),
+        };
         // Open on the most recent bars; the clamp in the chart trims this to
         // whatever the screen can actually hold.
         _window = ChartWindow(
@@ -129,6 +139,7 @@ class _DetailScreenState extends State<DetailScreen> {
         _history = null;
         _mas = const {};
         _rsi = const [];
+        _crosses = const {};
         _error = describeError(err);
       });
     } finally {
@@ -291,6 +302,7 @@ class _DetailScreenState extends State<DetailScreen> {
             if (_history != null) ...[
               const SizedBox(height: 6),
               _maLegend(),
+              _latestCrossLine(),
               const SizedBox(height: 14),
               RsiPane(values: _rsi, window: _window, gutter: _axisGutter),
             ],
@@ -298,12 +310,6 @@ class _DetailScreenState extends State<DetailScreen> {
               const SizedBox(height: 20),
               _Stats(currency: currency, quote: quote),
             ],
-            const SizedBox(height: 20),
-            _FairValue(
-              symbol: widget.symbol,
-              price: quote?.price ?? _visible.lastOrNull?.close,
-              currency: currency,
-            ),
             const SizedBox(height: 20),
             _alertsSection(currency, headline?.price ?? quote?.price),
             const SizedBox(height: 20),
@@ -380,6 +386,7 @@ class _DetailScreenState extends State<DetailScreen> {
                   values: _mas[maPeriods[i]]!,
                 ),
           ],
+          markers: _markers(history.candles.length),
           baseline: _visible.isEmpty ? null : _visible.first.open,
           onScrub: (candle) => setState(() => _scrubbed = candle),
         ),
@@ -454,6 +461,94 @@ class _DetailScreenState extends State<DetailScreen> {
             style: TextStyle(color: c.textFaint, fontSize: 12),
           ),
       ],
+    );
+  }
+
+  /// Crossover markers for the chart.
+  ///
+  /// Anchored to the slower moving average, which is where the crossing
+  /// happens in both forms — two averages meet on the slower line, and a close
+  /// crossing MA200 crosses it there too.
+  List<ChartMarker> _markers(int barCount) {
+    final out = <ChartMarker>[];
+    for (final spec in crossoverSpecs) {
+      if (!_visibleCrosses.contains(spec.id)) continue;
+      final slow = _mas[spec.slowPeriod];
+      if (slow == null) continue;
+
+      for (final cross in _crosses[spec.id] ?? const <Crossing>[]) {
+        if (cross.index >= barCount || cross.index >= slow.length) continue;
+        final price = slow[cross.index];
+        if (price == null) continue;
+        out.add(
+          ChartMarker(
+            index: cross.index,
+            price: price,
+            up: cross.direction == CrossDirection.up,
+            label: spec.labelFor(cross.direction),
+          ),
+        );
+      }
+    }
+    return out;
+  }
+
+  /// The most recent crossing among the visible crossovers, if any.
+  ({CrossoverSpec spec, Crossing cross})? get _latestCross {
+    ({CrossoverSpec spec, Crossing cross})? latest;
+    for (final spec in crossoverSpecs) {
+      if (!_visibleCrosses.contains(spec.id)) continue;
+      final list = _crosses[spec.id];
+      if (list == null || list.isEmpty) continue;
+      final cross = list.last;
+      if (latest == null || cross.index > latest.cross.index) {
+        latest = (spec: spec, cross: cross);
+      }
+    }
+    return latest;
+  }
+
+  /// Names the most recent crossing in words.
+  ///
+  /// Dated from the bar's own timestamp rather than counting bars, so it reads
+  /// in calendar days the way a user thinks about it — 40 trading days ago is
+  /// two months, not six weeks.
+  Widget _latestCrossLine() {
+    final latest = _latestCross;
+    final candles = _history?.candles ?? const <Candle>[];
+    if (latest == null || candles.isEmpty) return const SizedBox.shrink();
+    if (latest.cross.index >= candles.length) return const SizedBox.shrink();
+
+    final c = context.colors;
+    final up = latest.cross.direction == CrossDirection.up;
+    final at = DateTime.fromMillisecondsSinceEpoch(
+      candles[latest.cross.index].t * 1000,
+    );
+    final last = DateTime.fromMillisecondsSinceEpoch(candles.last.t * 1000);
+    final days = last.difference(at).inDays;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Icon(
+            up ? Icons.arrow_upward : Icons.arrow_downward,
+            size: 13,
+            color: up ? c.up : c.down,
+          ),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              days == 0
+                  ? '${latest.spec.labelFor(latest.cross.direction)} today'
+                  : '${latest.spec.labelFor(latest.cross.direction)} '
+                        '$days ${days == 1 ? "day" : "days"} ago',
+              style: TextStyle(color: c.textMuted, fontSize: 12),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -532,7 +627,65 @@ class _DetailScreenState extends State<DetailScreen> {
               );
             },
           ),
+        for (final spec in crossoverSpecs) _crossChip(spec),
       ],
+    );
+  }
+
+  /// A legend chip toggling one crossover's markers.
+  ///
+  /// Its swatch is a triangle rather than a line, so the chip says what it
+  /// draws: these mark single bars, they are not another average.
+  Widget _crossChip(CrossoverSpec spec) {
+    final c = context.colors;
+    final count = _crosses[spec.id]?.length ?? 0;
+    // Availability is whether the crossover could be computed at all, not
+    // whether it found anything: a range too short for the slow average reads
+    // n/a, while a range that simply never crossed reads 0. Collapsing the two
+    // would say "unavailable" about a real and informative answer.
+    final slow = _mas[spec.slowPeriod];
+    final available = slow != null && slow.any((v) => v != null);
+    final shown = _visibleCrosses.contains(spec.id) && available;
+
+    return InkWell(
+      onTap: available
+          ? () => setState(() {
+              if (!_visibleCrosses.remove(spec.id)) {
+                _visibleCrosses.add(spec.id);
+              }
+            })
+          : null,
+      borderRadius: BorderRadius.circular(7),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.change_history,
+              size: 11,
+              color: shown ? c.up : c.textFaint,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              spec.label,
+              style: TextStyle(
+                color: shown ? c.textMuted : c.textFaint,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              available ? '$count' : 'n/a',
+              style: tabularFigures.copyWith(
+                color: shown ? c.text : c.textFaint,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -793,192 +946,6 @@ class _OhlcStrip extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-/// Price against a discounted-cash-flow fair value.
-///
-/// Always shown beside the live price rather than in place of it: the DCF is a
-/// third party's projection, and the section names its source and its age so
-/// it is read as an opinion rather than a measurement.
-class _FairValue extends StatelessWidget {
-  const _FairValue({
-    required this.symbol,
-    required this.price,
-    required this.currency,
-  });
-
-  final String symbol;
-  final double? price;
-  final String currency;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final model = context.watch<ValuationModel>();
-
-    return Container(
-      decoration: BoxDecoration(
-        color: c.card,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.border),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Text(
-                'Fair value (DCF)',
-                style: TextStyle(
-                  color: c.text,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              if (model.isLoading(symbol))
-                SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: c.textMuted,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _body(context, model),
-        ],
-      ),
-    );
-  }
-
-  Widget _body(BuildContext context, ValuationModel model) {
-    final c = context.colors;
-
-    if (!model.hasApiKey) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Add a Financial Modeling Prep API key to see a fair value '
-            'estimate. Their free tier is enough.',
-            style: TextStyle(color: c.textMuted, fontSize: 13, height: 1.4),
-          ),
-          const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => Navigator.of(
-              context,
-            ).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
-            style: TextButton.styleFrom(
-              foregroundColor: c.accent,
-              padding: EdgeInsets.zero,
-            ),
-            child: const Text('Open settings'),
-          ),
-        ],
-      );
-    }
-
-    final error = model.errorFor(symbol);
-    if (error != null) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Text(
-              error,
-              style: TextStyle(color: c.textMuted, fontSize: 13, height: 1.4),
-            ),
-          ),
-          TextButton(
-            onPressed: () => model.ensureLoaded(symbol, force: true),
-            style: TextButton.styleFrom(foregroundColor: c.accent),
-            child: const Text('Retry'),
-          ),
-        ],
-      );
-    }
-
-    final valuation = model.valuationFor(symbol);
-    if (valuation == null) {
-      return Text(
-        model.isLoading(symbol) ? 'Fetching…' : 'No valuation yet.',
-        style: TextStyle(color: c.textMuted, fontSize: 13),
-      );
-    }
-
-    final live = price;
-    final verdict = live == null ? null : verdictFor(live, valuation.dcf);
-    final margin = live == null ? null : marginOfSafety(live, valuation.dcf);
-    // Green for a discount, red for a premium — the same direction the rest of
-    // the app uses for "good for the holder".
-    final tint = verdict == null
-        ? c.textMuted
-        : verdict.isCheap
-        ? c.up
-        : verdict.isExpensive
-        ? c.down
-        : c.textMuted;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Text(
-              formatPrice(valuation.dcf, currency),
-              style: tabularFigures.copyWith(
-                color: c.text,
-                fontSize: 22,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(width: 10),
-            if (verdict != null)
-              Expanded(
-                child: Text(
-                  verdict.label,
-                  style: TextStyle(
-                    color: tint,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-          ],
-        ),
-        if (margin != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            margin >= 0
-                ? '${margin.toStringAsFixed(1)}% below fair value'
-                : '${margin.abs().toStringAsFixed(1)}% above fair value',
-            style: tabularFigures.copyWith(color: tint, fontSize: 13),
-          ),
-        ],
-        if (valuation.currency != currency) ...[
-          const SizedBox(height: 8),
-          // Comparing a USD model output against a pence-quoted price would be
-          // nonsense, so the mismatch is stated rather than hidden.
-          Text(
-            'Quoted in ${valuation.currency} while the price is in $currency — '
-            'these are not directly comparable.',
-            style: TextStyle(color: c.danger, fontSize: 12, height: 1.4),
-          ),
-        ],
-        const SizedBox(height: 10),
-        Text(
-          'Financial Modeling Prep · ${formatUpdatedAt(valuation.fetchedAt).replaceFirst("Updated ", "fetched ")}'
-          '${isStale(valuation) ? " · refreshing soon" : ""}',
-          style: TextStyle(color: c.textFaint, fontSize: 11.5),
-        ),
-      ],
     );
   }
 }

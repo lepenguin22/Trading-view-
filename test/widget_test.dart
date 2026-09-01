@@ -11,12 +11,10 @@ import 'package:ticker/main.dart';
 import 'package:ticker/api/portfolio_source.dart';
 import 'package:ticker/screens/import_screen.dart';
 import 'package:ticker/screens/watchlist_screen.dart';
-import 'package:ticker/api/valuation_source.dart';
-import 'package:ticker/screens/settings_screen.dart';
 import 'package:ticker/state/alerts.dart';
-import 'package:ticker/state/valuation_store.dart';
 import 'package:ticker/state/watchlist.dart';
 import 'package:ticker/theme/app_theme.dart';
+import 'package:ticker/models/crossover.dart';
 import 'package:ticker/models/types.dart';
 import 'package:ticker/widgets/price_chart.dart';
 import 'package:ticker/widgets/rsi_pane.dart';
@@ -43,16 +41,11 @@ void main() {
   ///
   /// Notifications and background scheduling are faked: both would otherwise
   /// reach for a platform that does not exist under `flutter test`.
-  Widget appWith(http.Client client, {http.Client? valuationClient}) {
+  Widget appWith(http.Client client) {
     return TickerApp(
       createApi: () => YahooApi(client: client),
       createAlerts: () =>
           AlertsModel(notifier: notifier, scheduler: (_) async {}),
-      createValuations: valuationClient == null
-          ? null
-          : () => ValuationModel(
-              source: ValuationSource(client: valuationClient),
-            ),
     );
   }
 
@@ -429,9 +422,20 @@ void main() {
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
 
-    // Shown but flagged, rather than silently absent.
-    expect(find.text('MA20'), findsOneWidget);
-    expect(find.text('n/a'), findsNWidgets(3));
+    // Shown but flagged, rather than silently absent. Asserted per chip
+    // rather than by counting every n/a on the screen, so adding a legend
+    // entry elsewhere does not silently change what this test checks.
+    for (final label in ['MA20', 'MA50', 'MA200']) {
+      final row = find.ancestor(
+        of: find.text(label),
+        matching: find.byType(Row),
+      );
+      expect(
+        find.descendant(of: row.first, matching: find.text('n/a')),
+        findsOneWidget,
+        reason: '$label should read n/a on a four-bar range',
+      );
+    }
 
     await teardown(tester);
   });
@@ -925,179 +929,125 @@ void main() {
     await teardown(tester);
   });
 
-  /// A valuation endpoint that answers every symbol with [dcf].
-  MockClient dcfReturning(double dcf) => MockClient(
-    (_) async => http.Response(
-      '[{"symbol":"AAPL","dcf":$dcf}]',
-      200,
-      headers: {'content-type': 'application/json'},
-    ),
-  );
+  /// A chart payload of [closes] as daily bars, so a test can hand the detail
+  /// screen a series long enough for a 200-bar average to exist at all.
+  String seriesChart(List<double> closes) {
+    const day = 86400;
+    const start = 1600000000;
+    final times = [for (var i = 0; i < closes.length; i++) start + i * day]
+        .join(',');
+    final values = closes.map((c) => c.toStringAsFixed(2)).join(',');
+    return '{"chart":{"result":[{"meta":{"currency":"USD","symbol":"AAPL",'
+        '"regularMarketPrice":${closes.last},"previousClose":${closes.first},'
+        '"longName":"Apple Inc","marketState":"REGULAR"},'
+        '"timestamp":[$times],"indicators":{"quote":[{"open":[$values],'
+        '"high":[$values],"low":[$values],"close":[$values]}]}}],'
+        '"error":null}}';
+  }
 
-  testWidgets('without an API key the fair value section explains itself', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({});
+  /// Falls then rises, so both moving averages and the price genuinely cross
+  /// the 200 line rather than starting on one side of it.
+  final valley = <double>[
+    for (var i = 0; i < 200; i++) 300 - i.toDouble(),
+    for (var i = 0; i < 200; i++) 100 + i.toDouble(),
+  ];
 
-    await tester.pumpWidget(appWith(feedResolving()));
+  Future<void> openDetail(WidgetTester tester, List<double> closes) async {
+    await tester.pumpWidget(appWith(respondingWith(seriesChart(closes))));
     await tester.pumpAndSettle();
-
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
+  }
 
-    await tester.scrollUntilVisible(find.text('Fair value (DCF)'), 300);
-    await tester.pumpAndSettle();
+  testWidgets('the chart legend offers each crossover', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+    });
 
+    await openDetail(tester, valley);
+
+    for (final spec in crossoverSpecs) {
+      expect(
+        find.text(spec.label),
+        findsOneWidget,
+        reason: '${spec.id} has no legend chip',
+      );
+    }
+
+    await teardown(tester);
+  });
+
+  testWidgets('the most recent crossing is named in words', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+    });
+
+    await openDetail(tester, valley);
+
+    // The series turns upward, so whichever crossover fired last fired up.
     expect(
-      find.textContaining('Financial Modeling Prep API key'),
+      find.textContaining(RegExp(r'(Golden Cross|crossed above MA200)')),
       findsOneWidget,
     );
-    // Offers the way in rather than leaving a dead panel.
-    expect(find.widgetWithText(TextButton, 'Open settings'), findsOneWidget);
+    expect(find.textContaining('ago'), findsOneWidget);
 
     await teardown(tester);
   });
 
-  testWidgets('with a key it shows the DCF, verdict and margin', (
+  testWidgets('a crossover chip toggles its markers off', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+    });
+
+    await openDetail(tester, valley);
+
+    final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(chart.markers, isNotEmpty);
+
+    for (final spec in crossoverSpecs) {
+      await tester.ensureVisible(find.text(spec.label));
+      await tester.tap(find.text(spec.label));
+      await tester.pumpAndSettle();
+    }
+
+    final off = tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(off.markers, isEmpty);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a range too short for MA200 shows no crossings, not a crash', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({
-      'ticker.valuation.apiKey.v1': 'test-key',
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
     });
 
-    await tester.pumpWidget(
-      appWith(feedResolving(), valuationClient: dcfReturning(200)),
-    );
-    await tester.pumpAndSettle();
+    await openDetail(tester, [for (var i = 0; i < 40; i++) 100 + i.toDouble()]);
 
-    await tester.tap(find.text('AAPL').first);
-    await tester.pumpAndSettle();
-
-    await tester.scrollUntilVisible(find.text('Fair value (DCF)'), 300);
-    await tester.pumpAndSettle();
-
-    // The fixture quotes the stock at 100 against a fair value of 200.
-    expect(find.textContaining('200.00'), findsWidgets);
-    expect(find.text('Significantly undervalued'), findsOneWidget);
-    expect(find.textContaining('50.0% below fair value'), findsOneWidget);
-    // Attributed, so the number is not mistaken for the app's own.
-    expect(find.textContaining('Financial Modeling Prep ·'), findsOneWidget);
+    final chart = tester.widget<PriceChart>(find.byType(PriceChart));
+    expect(chart.markers, isEmpty);
+    // The chips stay, reading as unavailable rather than disappearing.
+    for (final spec in crossoverSpecs) {
+      expect(find.text(spec.label), findsOneWidget);
+    }
+    expect(find.textContaining('ago'), findsNothing);
 
     await teardown(tester);
   });
 
-  testWidgets('a rejected key is reported on the stock, with a retry', (
+  testWidgets('the import screen is reachable from the app bar', (
     tester,
   ) async {
-    SharedPreferences.setMockInitialValues({
-      'ticker.valuation.apiKey.v1': 'bad-key',
-    });
-
-    await tester.pumpWidget(
-      appWith(
-        feedResolving(),
-        valuationClient: MockClient((_) async => http.Response('', 401)),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('AAPL').first);
-    await tester.pumpAndSettle();
-
-    await tester.scrollUntilVisible(find.text('Fair value (DCF)'), 300);
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('rejected'), findsOneWidget);
-    expect(find.widgetWithText(TextButton, 'Retry'), findsOneWidget);
-
-    await teardown(tester);
-  });
-
-  testWidgets('the settings screen saves a key', (tester) async {
-    SharedPreferences.setMockInitialValues({});
-
-    final model = ValuationModel(
-      source: ValuationSource(client: dcfReturning(150)),
-    );
-    await model.start();
-
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: lightTheme,
-        home: ChangeNotifierProvider<ValuationModel>.value(
-          value: model,
-          child: const SettingsScreen(),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(model.hasApiKey, isFalse);
-
-    await tester.enterText(find.byType(TextField), 'my-key');
-    await tester.tap(find.widgetWithText(FilledButton, 'Save key'));
-    await tester.pumpAndSettle();
-
-    expect(model.hasApiKey, isTrue);
-    expect(model.apiKey, 'my-key');
-    expect(find.textContaining('Key saved'), findsOneWidget);
-
-    model.dispose();
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump();
-  });
-
-  testWidgets('a cached valuation is not refetched', (tester) async {
-    SharedPreferences.setMockInitialValues({
-      'ticker.valuation.apiKey.v1': 'test-key',
-    });
-
-    var calls = 0;
-    final counting = MockClient((_) async {
-      calls++;
-      return http.Response(
-        '[{"symbol":"AAPL","dcf":200}]',
-        200,
-        headers: {'content-type': 'application/json'},
-      );
-    });
-
-    await tester.pumpWidget(
-      appWith(feedResolving(), valuationClient: counting),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('AAPL').first);
-    await tester.pumpAndSettle();
-    expect(calls, 1);
-
-    // Leaving and reopening must not spend another request against a free
-    // tier for a figure that changes quarterly.
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('AAPL').first);
-    await tester.pumpAndSettle();
-
-    expect(calls, 1);
-
-    await teardown(tester);
-  });
-
-  testWidgets('import and settings live in the overflow menu', (tester) async {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(appWith(feedResolving()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('More'));
+    await tester.tap(find.byTooltip('Import portfolio'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Import portfolio'), findsOneWidget);
-    expect(find.text('Settings'), findsOneWidget);
-
-    await tester.tap(find.text('Settings'));
-    await tester.pumpAndSettle();
-    expect(find.byType(SettingsScreen), findsOneWidget);
+    expect(find.byType(ImportScreen), findsOneWidget);
 
     await teardown(tester);
   });

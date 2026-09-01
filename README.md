@@ -16,11 +16,10 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
   with a long press to read a bar's open, high, low and close. Plus previous
   close, day high/low and exchange. A line view is a tap away for reading the
   shape of a long span.
-- **Fair value** — a discounted cash flow estimate from Financial Modeling
-  Prep on each stock, with a verdict and margin of safety against the live
-  price. Needs a free API key.
 - **Indicators** — 20, 50 and 200 simple moving averages overlaid on the price,
   each toggleable from the legend, and a 14-period RSI in its own pane.
+- **Crossovers** — Golden and Death Crosses (50/200) and price crossing MA200,
+  marked on the chart and named in words, each toggleable from the legend.
 - **Import** — fill the Portfolio list from a spreadsheet published as CSV,
   rather than typing holdings one by one.
 - **Price alerts** — set an alert on any symbol for a price rising to or above,
@@ -184,37 +183,44 @@ Removing a holding from the Portfolio inside the app hides it now, but the
 sheet still decides: it returns on the next import unless it is deleted there
 too.
 
-## Fair value
+## Moving-average crossovers
 
-Each stock's detail screen shows a discounted cash flow estimate from
-[Financial Modeling Prep](https://site.financialmodelingprep.com), the price as
-a share of it, and the resulting margin of safety. Add a free API key under
-**Settings** (the overflow menu on the home screen) to switch it on.
+Two crossovers are marked on the detail chart, each with a legend chip that
+toggles it and shows how many it found in the loaded range:
 
-**The number is FMP's model output, not a measurement.** It is attributed in
-the UI and dated, and shown beside the live price rather than in place of it.
-A different provider modelling the same company will produce a different
-figure, sometimes materially — GuruFocus's GF Value in particular uses a quite
-different method and will disagree.
+| Chip | What it marks |
+| --- | --- |
+| **50/200** | The 50 SMA crossing the 200 — a **Golden Cross** upward, a **Death Cross** downward |
+| **Price/200** | The closing price crossing the 200 SMA |
 
-**The verdict bands are deliberately wide.** Within ±10% of fair value a stock
-reads "fairly valued"; a DCF is a projection with wide error bars, and calling
-a 3% gap "undervalued" would lend the number authority it has not earned.
+A cross is drawn as a triangle anchored to the slower average, which is where
+the crossing happens in both forms. Bullish crossings point up from below the
+bar and bearish point down from above, so the two are told apart by **shape and
+position, not only colour** — the up-green and down-red are close enough under
+common colour vision deficiencies that colour alone would not carry it. Under
+the legend, the most recent crossing is named in words and dated in calendar
+days: "Golden Cross 34 days ago".
 
-**A valuation is fetched only when you open a stock, and then kept for a
-week.** FMP's free plan allows a few hundred requests a day, and a DCF only
-moves when the provider re-runs it against new filings — quarterly at most.
-Putting it on the price poll would exhaust the allowance on a figure that had
-not changed.
+**A cross is recorded on the bar whose difference takes the opposite sign to
+the last non-zero difference seen** — not merely to the previous bar's. That
+distinction matters when the two series touch exactly: an equal bar is a touch,
+not a cross, and comparing only against the previous bar would report a series
+that touches the average and then carries on in the same direction as having
+crossed it twice.
 
-A non-positive DCF — real for a company with negative projected cash flows — is
-reported rather than displayed, because every ratio built on it would be
-meaningless. If the provider quotes a different currency from the price feed,
-the mismatch is stated instead of the two being compared silently.
+Two cases read as "nothing" for different reasons, and the chip says which. A
+range shorter than 200 bars reads **n/a** — the average does not exist, so the
+question cannot be answered. A range where the price simply never crossed reads
+**0**, which is a real answer and often the informative one. A steadily rising
+stock is the case that catches this out: by the time the 200 average exists the
+price is already above it, so there is genuinely nothing to cross.
 
-**The API key is stored on the device only.** It is never bundled into the
-build, so it can be rotated without shipping a new APK, but anyone who can read
-the app's data can read it.
+Nothing here notifies you. Crossovers are drawn from history the chart has
+already fetched, so they cost no extra requests and add no background work; a
+cross that happened while the app was closed is on the chart when you next open
+the stock. Alerting on one would mean the background worker fetching daily
+history per symbol rather than just a quote — a considerably heavier job, and
+not what this does.
 
 ## How often prices update
 
@@ -364,30 +370,28 @@ lib/main.dart            App root, providers and theme wiring
 lib/models/
   types.dart             PricePoint, Candle, Quote, History, ChartWindow
   alert.dart             PriceAlert and the pure firing logic (unit tested)
-  valuation.dart         Fair value, verdict bands, margin of safety (tested)
+  crossover.dart         Which crossovers exist and what they are called
 lib/api/
   parse.dart             Pure parsers for the Yahoo payloads (unit tested)
   portfolio_source.dart  Fetches a published CSV sheet
-  valuation_source.dart  Fetches a DCF fair value from Financial Modeling Prep
   yahoo.dart             HTTP, host fallback, timeouts, error mapping
 lib/state/
   refresh_policy.dart    When to poll what: pure cadence logic, no I/O
   watchlist.dart         Watchlist model: refresh, polling, add/remove/reorder
   alerts.dart            Alerts model: create, arm/disarm, foreground firing
-  valuation_store.dart   Fair value cache, API key, lazy per-symbol fetching
   storage.dart           SharedPreferences persistence
   alert_storage.dart     Alert persistence, shared with the background isolate
 lib/background/
   alert_worker.dart      Background entry point, check routine and scheduling
 lib/notifications/
   notifications.dart     Local notification channel, permission and posting
-lib/screens/             Watchlist, Search, Detail, Alerts, Import, Settings
+lib/screens/             Watchlist, Search, Detail, Alerts, Import
 lib/widgets/             QuoteRow, PriceChart, RsiPane, Sparkline, ChangePill,
                          AlertSheet
 lib/utils/
   format.dart            Price, change and date formatting
   chart.dart             Line and candle geometry, zoom limits (unit tested)
-  indicators.dart        Moving averages and Wilder RSI (unit tested)
+  indicators.dart        Moving averages, Wilder RSI, crossings (unit tested)
   portfolio_csv.dart     Holdings-table extraction from CSV (unit tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
 test/                    Tests and payload fixtures
