@@ -230,6 +230,69 @@ void main() {
     await teardown(tester);
   });
 
+  testWidgets('creates an RSI alert from the sheet', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('RSI'));
+    await tester.pumpAndSettle();
+
+    // Switching kind reseeds the level: a price would be a nonsensical RSI.
+    expect(find.text('RSI level'), findsOneWidget);
+    await tester.tap(find.text('Below'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      '30',
+    );
+
+    await tester.tap(find.widgetWithText(FilledButton, 'Create alert'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Alert me when AAPL'), findsNothing);
+    expect(find.textContaining('RSI below 30'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('creates a Golden Cross alert from the sheet', (tester) async {
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, 'Add'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Crossover'));
+    await tester.pumpAndSettle();
+
+    // Concrete named conditions, not a spec plus a direction to combine.
+    expect(find.text('Golden Cross'), findsOneWidget);
+    expect(find.text('Death Cross'), findsOneWidget);
+    // No level to enter, so no numeric field at all.
+    expect(find.byType(TextField), findsNothing);
+
+    await tester.tap(find.text('Death Cross'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Create alert'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Alert me when AAPL'), findsNothing);
+    expect(find.textContaining('Death Cross'), findsWidgets);
+
+    await teardown(tester);
+  });
+
   testWidgets('warns when the alert condition is already met', (tester) async {
     await tester.pumpWidget(appWith(respondingWith(chart1d)));
     await tester.pumpAndSettle();

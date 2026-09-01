@@ -289,19 +289,45 @@ persistent socket and its reconnection handling. Worth doing if second-by-second
 matters; the polling above is deliberately the version with no new dependencies
 and no key to manage.
 
-## How price alerts work
+## How alerts work
 
 Add one from a symbol's detail screen; manage them all from the bell in the
-watchlist app bar. An alert is a level test, not a crossing test — an "above
-200" alert on a symbol already trading at 210 fires on the next check rather
-than waiting for a dip and a recovery. The create sheet says so when the
-condition already holds.
+watchlist app bar. Three kinds:
+
+| Kind | Condition |
+| --- | --- |
+| **Price** | Above or below a price you set |
+| **RSI** | The 14-period RSI above or below a level, 30 and 70 being the usual marks |
+| **Crossover** | A Golden Cross, Death Cross, or the price crossing MA200 |
+
+**Price and RSI are level tests, not crossing tests.** An "above 200" alert on
+a symbol already trading at 210 fires on the next check rather than waiting for
+a dip and a recovery — an alert set on the wrong side would otherwise never
+fire at all. The create sheet says so when the condition already holds.
+
+**A crossover is an event test instead**, because it is not a level. It fires
+on a crossing dated *at or after the alert was created*, so creating a Golden
+Cross alert does not fire on a cross from last month — and a cross that
+happened while the phone was off still fires at the next check, because the
+crossing is dated by its bar rather than by when the check ran.
 
 Alerts are checked in two places:
 
-- **While the app is open**, on every list refresh, so a due alert fires within
-  about a minute.
+- **While the app is open**, on every list refresh, so a due **price** alert
+  fires within about a minute.
 - **In the background**, via `workmanager`, roughly every 15 minutes.
+
+**RSI and crossover alerts are decided in the background check only.** A quote
+carries no history, so those conditions are simply unknown in the foreground,
+and an unfetched indicator must never be read as "the condition was not met".
+Both are daily signals confirmed at the close, so a wait of minutes costs
+nothing.
+
+**Only the symbols carrying an indicator alert pay for history.** A list of
+plain price alerts still costs one cheap quote request each; the five-year
+daily fetch happens only where an RSI or crossover condition actually needs it.
+One symbol's history failing does not take the check down — the other alerts
+are still evaluated.
 
 **What to expect on each platform.** On Android this works as you would hope:
 WorkManager wakes the app on a fairly reliable cadence, though 15 minutes is a

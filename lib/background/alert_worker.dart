@@ -2,8 +2,12 @@ import 'dart:ui' show DartPluginRegistrant;
 
 import 'package:workmanager/workmanager.dart';
 
+import 'package:flutter/foundation.dart';
+
 import '../api/yahoo.dart';
 import '../models/alert.dart';
+import '../models/crossover.dart';
+import '../utils/indicators.dart';
 import '../notifications/notifications.dart';
 import '../state/alert_storage.dart';
 
@@ -48,23 +52,39 @@ Future<List<PriceAlert>> runAlertCheck({
   final symbols = symbolsToWatch(alerts);
   if (symbols.isEmpty) return const [];
 
+  final needHistory = symbolsNeedingHistory(alerts);
+
   final client = api ?? YahooApi();
-  final Map<String, double> prices;
+  final Map<String, AlertInputs> inputs;
   try {
     final batch = await client.fetchQuotes(symbols.toList(growable: false));
-    prices = {for (final q in batch.quotes) q.symbol: q.price};
+    final prices = {for (final q in batch.quotes) q.symbol: q.price};
+
+    final indicators = await _indicatorsFor(client, needHistory);
+
+    inputs = {
+      for (final symbol in {...prices.keys, ...indicators.keys})
+        symbol: AlertInputs(
+          price: prices[symbol],
+          rsi: indicators[symbol]?.rsi,
+          crossings: indicators[symbol]?.crossings ?? const [],
+        ),
+    };
   } finally {
     if (api == null) client.dispose();
   }
 
-  if (prices.isEmpty) return const [];
+  if (inputs.isEmpty) return const [];
 
-  final fired = firedAlerts(alerts, prices);
+  final fired = firedAlerts(alerts, inputs);
   if (fired.isEmpty) return const [];
 
   final alerter = notifier ?? AlertNotifier();
   for (final alert in fired) {
-    await alerter.showAlert(alert, prices[alert.symbol]!);
+    // A crossover alert may fire on a symbol whose quote request failed, so
+    // the price is not guaranteed. Zero is only ever a display fallback here;
+    // the alert's own condition has already been decided.
+    await alerter.showAlert(alert, inputs[alert.symbol]?.price ?? 0);
   }
 
   // Re-read rather than writing back the list loaded above: the user may have
@@ -81,6 +101,65 @@ Future<List<PriceAlert>> runAlertCheck({
   ]);
 
   return fired;
+}
+
+/// What one symbol's daily history says about its indicators.
+typedef _Indicators = ({double? rsi, List<CrossingEvent> crossings});
+
+/// Fetches daily history for [symbols] and derives their indicators.
+///
+/// Only called with the symbols that actually carry an indicator alert, so a
+/// list of plain price alerts never pays for history. A symbol whose history
+/// fails is simply absent, which reads as "not known" rather than "condition
+/// not met".
+Future<Map<String, _Indicators>> _indicatorsFor(
+  YahooApi client,
+  Set<String> symbols,
+) async {
+  if (symbols.isEmpty) return const {};
+
+  final out = <String, _Indicators>{};
+  await Future.wait(
+    symbols.map((symbol) async {
+      try {
+        final history = await client.fetchHistory(symbol);
+        final closes = history.closes;
+        if (closes.isEmpty) return;
+
+        final rsiSeries = relativeStrengthIndex(closes, rsiPeriod);
+        final movingAverages = {
+          for (final period in maPeriods)
+            period: simpleMovingAverage(closes, period),
+        };
+
+        final crossings = <CrossingEvent>[];
+        for (final spec in crossoverSpecs) {
+          for (final cross in crossingsFor(
+            spec,
+            closes: closes,
+            movingAverages: movingAverages,
+          )) {
+            if (cross.index >= history.candles.length) continue;
+            crossings.add((
+              crossoverId: spec.id,
+              direction: cross.direction,
+              at: history.candles[cross.index].t * 1000,
+            ));
+          }
+        }
+
+        out[symbol] = (
+          rsi: rsiSeries.lastWhere((v) => v != null, orElse: () => null),
+          crossings: crossings,
+        );
+      } catch (error) {
+        // One symbol's history failing must not take the whole check down:
+        // the other alerts still deserve to be evaluated.
+        debugPrint('History for $symbol unavailable: $error');
+      }
+    }),
+  );
+  return out;
 }
 
 /// Schedules the periodic check, or cancels it when nothing is armed.

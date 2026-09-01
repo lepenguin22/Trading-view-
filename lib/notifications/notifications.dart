@@ -89,13 +89,14 @@ class AlertNotifier {
   Future<void> showAlert(PriceAlert alert, double price) async {
     await ensureInitialized();
 
-    final threshold = formatPrice(alert.threshold, alert.currency);
     final now = formatPrice(price, alert.currency);
 
     await _plugin.show(
       id: notificationIdFor(alert),
-      title: '${alert.symbol} is at $now',
-      body: '${alert.symbol} ${alert.direction.phrase} $threshold.',
+      // A crossover can fire on a symbol whose quote request failed, so the
+      // price is not always known. The condition itself always is.
+      title: price > 0 ? '${alert.symbol} is at $now' : '${alert.symbol} alert',
+      body: '${alert.describe((v) => formatPrice(v, alert.currency))}.',
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
           _channelId,

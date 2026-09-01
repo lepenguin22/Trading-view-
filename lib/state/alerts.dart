@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../background/alert_worker.dart';
 import '../models/alert.dart';
+import '../models/crossover.dart';
 import '../models/types.dart';
 import '../notifications/notifications.dart';
 import 'alert_storage.dart';
@@ -67,16 +68,33 @@ class AlertsModel extends ChangeNotifier {
     required AlertDirection direction,
     required double threshold,
     required String currency,
+    AlertKind kind = AlertKind.price,
+    String? crossoverId,
   }) async {
-    if (!threshold.isFinite || threshold <= 0) {
-      return 'Enter a price above zero.';
+    switch (kind) {
+      case AlertKind.price:
+        if (!threshold.isFinite || threshold <= 0) {
+          return 'Enter a price above zero.';
+        }
+      case AlertKind.rsi:
+        // RSI is bounded by definition, so a level outside it could never be
+        // reached and the alert would sit armed forever.
+        if (!threshold.isFinite || threshold <= 0 || threshold >= 100) {
+          return 'Enter an RSI level between 1 and 99.';
+        }
+      case AlertKind.crossover:
+        if (!crossoverSpecs.any((s) => s.id == crossoverId)) {
+          return 'Choose a crossover to watch.';
+        }
     }
 
     final duplicate = _alerts.any(
       (a) =>
           a.symbol == symbol &&
+          a.kind == kind &&
+          a.crossoverId == crossoverId &&
           a.direction == direction &&
-          a.threshold == threshold &&
+          (kind == AlertKind.crossover || a.threshold == threshold) &&
           a.enabled &&
           !a.hasTriggered,
     );
@@ -95,6 +113,8 @@ class AlertsModel extends ChangeNotifier {
       PriceAlert(
         id: '$symbol-$now-${_alerts.length}',
         symbol: symbol,
+        kind: kind,
+        crossoverId: crossoverId,
         direction: direction,
         threshold: threshold,
         currency: currency,
@@ -129,11 +149,16 @@ class AlertsModel extends ChangeNotifier {
   /// The background worker covers the app being closed; this makes an alert
   /// fire promptly when the user happens to have the app open, rather than
   /// waiting up to 15 minutes for the next background pass.
+  ///
+  /// Only price alerts can be decided here. A quote carries no history, so RSI
+  /// and crossover conditions are simply unknown in the foreground and are
+  /// left to the background check, which fetches what they need. Those are
+  /// daily signals, so a wait of minutes costs nothing.
   Future<void> evaluateAgainst(Map<String, Quote> quotes) async {
     if (_alerts.isEmpty) return;
 
     final prices = {for (final e in quotes.entries) e.key: e.value.price};
-    final fired = firedAlerts(_alerts, prices);
+    final fired = firedAlerts(_alerts, priceInputs(prices));
     if (fired.isEmpty) return;
 
     for (final alert in fired) {
