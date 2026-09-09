@@ -1,3 +1,5 @@
+import '../utils/portfolio_csv.dart' show financialScoreMax, moatScoreMax;
+
 /// One line of the portfolio: a symbol and, when the sheet says so, how many
 /// shares are held.
 ///
@@ -6,7 +8,14 @@
 /// depends on a quantity treats null as "not stated" rather than as zero — a
 /// position of unknown size is not a position worth nothing.
 class Holding {
-  const Holding({required this.symbol, this.shares, this.costPerShare});
+  const Holding({
+    required this.symbol,
+    this.shares,
+    this.costPerShare,
+    this.financialScore,
+    this.moatScore,
+    this.scoredAt,
+  });
 
   final String symbol;
 
@@ -20,6 +29,27 @@ class Holding {
   /// different number, and treating one as the other would be wrong by a
   /// factor of the share count.
   final double? costPerShare;
+
+  /// Checklist score out of 19 from the analysis framework, when the sheet
+  /// carries one.
+  ///
+  /// Recorded, never computed: the criteria need multi-year statements and
+  /// peer benchmarking that no price feed provides, and several are outright
+  /// qualitative. The app's job is to carry a judgement already made.
+  final int? financialScore;
+
+  /// Moat score out of 14, on the same terms.
+  final int? moatScore;
+
+  /// When those scores were arrived at.
+  ///
+  /// Shown beside them because a score is a snapshot: one from six months ago
+  /// may predate two earnings reports, and a stale judgement presented as
+  /// current is the way this feature would mislead.
+  final DateTime? scoredAt;
+
+  /// True when either score exists.
+  bool get hasScores => financialScore != null || moatScore != null;
 
   /// Market value at [price], or null when the quantity is not known.
   double? valueAt(double price) {
@@ -44,17 +74,29 @@ class Holding {
     return value - cost;
   }
 
-  Holding copyWith({String? symbol, double? shares, double? costPerShare}) =>
-      Holding(
-        symbol: symbol ?? this.symbol,
-        shares: shares ?? this.shares,
-        costPerShare: costPerShare ?? this.costPerShare,
-      );
+  Holding copyWith({
+    String? symbol,
+    double? shares,
+    double? costPerShare,
+    int? financialScore,
+    int? moatScore,
+    DateTime? scoredAt,
+  }) => Holding(
+    symbol: symbol ?? this.symbol,
+    shares: shares ?? this.shares,
+    costPerShare: costPerShare ?? this.costPerShare,
+    financialScore: financialScore ?? this.financialScore,
+    moatScore: moatScore ?? this.moatScore,
+    scoredAt: scoredAt ?? this.scoredAt,
+  );
 
   Map<String, dynamic> toJson() => {
     'symbol': symbol,
     if (shares != null) 'shares': shares,
     if (costPerShare != null) 'costPerShare': costPerShare,
+    if (financialScore != null) 'financialScore': financialScore,
+    if (moatScore != null) 'moatScore': moatScore,
+    if (scoredAt != null) 'scoredAt': scoredAt!.millisecondsSinceEpoch,
   };
 
   static Holding? fromJson(Object? raw) {
@@ -63,13 +105,28 @@ class Holding {
     if (symbol is! String || symbol.isEmpty) return null;
     final shares = raw['shares'];
     final cost = raw['costPerShare'];
+    final scoredAt = raw['scoredAt'];
     return Holding(
       symbol: symbol,
       shares: shares is num && shares.isFinite ? shares.toDouble() : null,
       costPerShare: cost is num && cost.isFinite && cost > 0
           ? cost.toDouble()
           : null,
+      // Bounds are re-checked on load, not just on parse: stored data can come
+      // from an older build whose scale differed.
+      financialScore: _storedScore(raw['financialScore'], financialScoreMax),
+      moatScore: _storedScore(raw['moatScore'], moatScoreMax),
+      scoredAt: scoredAt is num && scoredAt > 0
+          ? DateTime.fromMillisecondsSinceEpoch(scoredAt.toInt())
+          : null,
     );
+  }
+
+  static int? _storedScore(Object? raw, int max) {
+    if (raw is! num) return null;
+    final value = raw.toInt();
+    if (value < 0 || value > max) return null;
+    return value;
   }
 
   @override
@@ -77,14 +134,25 @@ class Holding {
       other is Holding &&
       other.symbol == symbol &&
       other.shares == shares &&
-      other.costPerShare == costPerShare;
+      other.costPerShare == costPerShare &&
+      other.financialScore == financialScore &&
+      other.moatScore == moatScore &&
+      other.scoredAt == scoredAt;
 
   @override
-  int get hashCode => Object.hash(symbol, shares, costPerShare);
+  int get hashCode => Object.hash(
+    symbol,
+    shares,
+    costPerShare,
+    financialScore,
+    moatScore,
+    scoredAt,
+  );
 
   @override
   String toString() =>
-      'Holding($symbol, shares: $shares, costPerShare: $costPerShare)';
+      'Holding($symbol, shares: $shares, costPerShare: $costPerShare, '
+      'financialScore: $financialScore, moatScore: $moatScore)';
 }
 
 /// A portfolio's worth in one currency.

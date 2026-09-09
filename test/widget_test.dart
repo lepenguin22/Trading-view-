@@ -977,6 +977,114 @@ void main() {
     await teardown(tester);
   });
 
+  testWidgets('a holding shows its checklist scores and their age', (
+    tester,
+  ) async {
+    final scoredAt = DateTime.now().subtract(const Duration(days: 21));
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14,'
+          '"moatScore":11,"scoredAt":${scoredAt.millisecondsSinceEpoch}}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fin 14/19 · Moat 11/14'), findsOneWidget);
+    expect(find.text('scored 3 weeks ago'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a stale score is called stale, not coloured like a loss', (
+    tester,
+  ) async {
+    final scoredAt = DateTime.now().subtract(const Duration(days: 260));
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":8,'
+          '"moatScore":4,"scoredAt":${scoredAt.millisecondsSinceEpoch}}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    // Said in words. Red is already the loss colour on this row, so staleness
+    // must not be carried by colour alone.
+    final label = find.textContaining('stale');
+    expect(label, findsOneWidget);
+
+    final colors = Theme.of(tester.element(label)).extension<AppColors>()!;
+    expect(tester.widget<Text>(label).style?.color, isNot(colors.down));
+
+    await teardown(tester);
+  });
+
+  testWidgets('a score with no readable date says so', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    // Only one score, and no date — the score still shows, but it must not
+    // look timeless.
+    expect(find.text('Fin 14/19'), findsOneWidget);
+    expect(find.text('no date'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a holding with no scores shows no score line', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1': '[{"symbol":"AAPL","shares":10}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Fin '), findsNothing);
+    expect(find.text('no date'), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the watchlist never shows scores, only the portfolio does', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"MSFT","shares":10,"financialScore":14}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    // The watchlist tab is showing.
+    expect(find.textContaining('Fin '), findsNothing);
+
+    await teardown(tester);
+  });
+
   testWidgets('the watchlist has no total, since it holds nothing', (
     tester,
   ) async {

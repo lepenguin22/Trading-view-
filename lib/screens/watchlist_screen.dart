@@ -281,6 +281,9 @@ class _SymbolListView extends StatelessWidget {
                   costPerShare: list == SymbolList.portfolio
                       ? model.holdingOf(symbol)?.costPerShare
                       : null,
+                  holding: list == SymbolList.portfolio
+                      ? model.holdingOf(symbol)
+                      : null,
                   hasAlert: context.watch<AlertsModel>().hasArmed(symbol),
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(

@@ -107,6 +107,32 @@ String formatPercent(double value) {
 }
 
 /// "Updated 14:32" style timestamp for the last successful refresh.
+/// How long ago a checklist score was arrived at, in calendar terms.
+///
+/// Coarse on purpose: the precision that matters is "is this months old",
+/// because a score older than a couple of earnings reports may no longer
+/// describe the company. [now] is injectable so the wording can be tested
+/// without waiting.
+String formatScoredAt(DateTime scoredAt, {DateTime? now}) {
+  final days = (now ?? DateTime.now()).difference(scoredAt).inDays;
+
+  if (days < 0) return 'scored in the future';
+  if (days == 0) return 'scored today';
+  if (days == 1) return 'scored yesterday';
+  if (days < 14) return 'scored $days days ago';
+  if (days < 61) return 'scored ${(days / 7).round()} weeks ago';
+  if (days < 365) return 'scored ${(days / 30).round()} months ago';
+  final years = days / 365;
+  if (years < 2) return 'scored over a year ago';
+  return 'scored ${years.floor()} years ago';
+}
+
+/// A score is treated as stale past this age, and said to be.
+const scoreStaleAfter = Duration(days: 180);
+
+bool isScoreStale(DateTime scoredAt, {DateTime? now}) =>
+    (now ?? DateTime.now()).difference(scoredAt) > scoreStaleAfter;
+
 String formatUpdatedAt(int? epochMs) {
   if (epochMs == null) return '';
   final time = DateFormat.Hm().format(
