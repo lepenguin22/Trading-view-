@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -226,6 +227,104 @@ void main() {
     // Sheet closed, and the alert is listed against the symbol.
     expect(find.text('Alert me when AAPL'), findsNothing);
     expect(find.textContaining('rises to or above'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the analysis button copies the prompt even if Claude will not '
+      'open', (tester) async {
+    // url_launcher has no platform behind it under flutter test, so launching
+    // fails — which is exactly the path that must still leave the user able to
+    // run the analysis.
+    final clipboard = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboard.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    // Answers "could not open" deterministically, rather than leaving the
+    // plugin with no platform behind it and the future never completing.
+    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      launcher,
+      (call) async => false,
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, null)
+        ..setMockMethodCallHandler(launcher, null);
+    });
+
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final button = find.widgetWithText(
+      OutlinedButton,
+      'Run framework analysis',
+    );
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(clipboard, ['Run the framework on AAPL']);
+    // And the user is told what to do with it rather than left guessing.
+    expect(find.textContaining('Paste it into Claude'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the analysis button opens Claude carrying the prompt', (
+    tester,
+  ) async {
+    final launched = <String>[];
+    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(launcher, (
+      call,
+    ) async {
+      final url = (call.arguments as Map)['url'];
+      if (url is String) launched.add(url);
+      return true;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, null)
+        ..setMockMethodCallHandler(launcher, null);
+    });
+
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final button = find.widgetWithText(
+      OutlinedButton,
+      'Run framework analysis',
+    );
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(launched, hasLength(1));
+    final uri = Uri.parse(launched.single);
+    expect(uri.host, 'claude.ai');
+    // The prompt survives being put in the link, rather than the link merely
+    // opening a blank chat.
+    expect(uri.queryParameters['q'], 'Run the framework on AAPL');
+    expect(find.textContaining('Opening Claude'), findsOneWidget);
 
     await teardown(tester);
   });

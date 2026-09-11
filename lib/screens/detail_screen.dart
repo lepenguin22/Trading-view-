@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 
 import '../api/yahoo.dart';
@@ -9,6 +11,7 @@ import '../state/alerts.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/chart.dart';
+import '../utils/analysis_prompt.dart';
 import '../utils/format.dart';
 import '../utils/indicators.dart';
 import '../widgets/alert_sheet.dart';
@@ -313,6 +316,8 @@ class _DetailScreenState extends State<DetailScreen> {
             const SizedBox(height: 20),
             _alertsSection(currency, headline?.price ?? quote?.price),
             const SizedBox(height: 20),
+            _analysisButton(),
+            const SizedBox(height: 10),
             _watchButton(onWatchlist),
           ],
         ),
@@ -729,6 +734,64 @@ class _DetailScreenState extends State<DetailScreen> {
         else
           for (final alert in alerts) _AlertRow(alert: alert),
       ],
+    );
+  }
+
+  /// Hands this symbol to Claude for a framework analysis.
+  ///
+  /// The prompt goes on the clipboard first and the link is opened second, so
+  /// the handoff still works when the link cannot carry the text or Claude is
+  /// not installed — in the worst case the user lands in Claude with the
+  /// prompt ready to paste.
+  Future<void> _startAnalysis() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final prompt = analysisPromptFor(widget.symbol);
+    if (prompt.isEmpty) return;
+
+    await Clipboard.setData(ClipboardData(text: prompt));
+    if (!mounted) return;
+
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        claudeUriFor(prompt),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (error) {
+      // Nothing installed to handle the link, or the platform refused it.
+      // Not worth surfacing as a failure: the prompt is already copied.
+      debugPrint('Could not open Claude: $error');
+    }
+    if (!mounted) return;
+
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          opened
+              ? 'Opening Claude. The prompt is on your clipboard too.'
+              : 'Prompt copied. Paste it into Claude to run the analysis.',
+        ),
+      ),
+    );
+  }
+
+  Widget _analysisButton() {
+    final c = context.colors;
+
+    return SizedBox(
+      height: 50,
+      child: OutlinedButton.icon(
+        onPressed: _startAnalysis,
+        icon: const Icon(Icons.fact_check_outlined, size: 19),
+        label: const Text('Run framework analysis'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: c.accent,
+          side: BorderSide(color: c.accent),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
+          ),
+        ),
+      ),
     );
   }
 

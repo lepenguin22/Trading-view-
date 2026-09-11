@@ -276,6 +276,30 @@ the price feed is asked about symbols, never about sizes. A portfolio saved by
 an older build, before quantities existed, still loads; those holdings simply
 have no count until the sheet is imported again.
 
+## Starting an analysis
+
+Every stock's detail screen has **Run framework analysis**. It copies a prompt
+to the clipboard and then opens Claude carrying it, so a deep dive on whatever
+you are looking at is one tap rather than a retyped ticker.
+
+The prompt is deliberately bare — `Run the framework on NVDA`. That exact
+wording is one the framework lists as a trigger, so a paraphrase risks a plain
+answer instead of the structured deep dive. Nothing else is sent: position size
+would anchor the analysis to a holding already owned, and the chart's current
+technicals answer a question the framework asks for itself.
+
+**The clipboard copy happens first, and it is the part that matters.** Whether
+a link can carry text into Claude is not something this project can guarantee —
+the behaviour has changed before, and the documentation is not reachable from
+the environment this was written in. So the button never depends on it: if the
+link opens Claude with the prompt filled in, good; if it opens a blank chat, or
+nothing is installed to handle it, the prompt is already copied and the message
+says to paste it. The handoff works either way.
+
+On Android the manifest declares an `https` intent query. Without it, from
+Android 11 on, an app cannot see which other apps handle web links and the
+launch silently reports failure.
+
 ## Analysis checklist scores
 
 If your sheet carries score columns, each holding shows them under its value:
