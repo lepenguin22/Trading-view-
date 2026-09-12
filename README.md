@@ -7,7 +7,8 @@ Built with Flutter, so one Dart codebase runs on both iOS and Android.
 
 - **Two lists, side by side** — a **Watchlist** of symbols you chose to follow,
   and a **Portfolio** mirrored from your spreadsheet, with each holding's size,
-  market value and return since purchase, and a total above the list. Both show live price,
+  market value and return since purchase, an analysis checklist score, and a
+  total above the list. Both show live price,
   absolute and percentage day change, and a sparkline of the session. Pull to
   refresh; both re-poll together while the app is on screen, on the adaptive
   cadence described below.
@@ -275,6 +276,71 @@ the price feed is asked about symbols, never about sizes. A portfolio saved by
 an older build, before quantities existed, still loads; those holdings simply
 have no count until the sheet is imported again.
 
+## Starting an analysis
+
+Every stock's detail screen has **Run framework analysis**. It copies a prompt
+to the clipboard and then opens Claude carrying it, so a deep dive on whatever
+you are looking at is one tap rather than a retyped ticker.
+
+The prompt is deliberately bare — `Run the framework on NVDA`. That exact
+wording is one the framework lists as a trigger, so a paraphrase risks a plain
+answer instead of the structured deep dive. Nothing else is sent: position size
+would anchor the analysis to a holding already owned, and the chart's current
+technicals answer a question the framework asks for itself.
+
+**The clipboard copy happens first, and it is the part that matters.** Whether
+a link can carry text into Claude is not something this project can guarantee —
+the behaviour has changed before, and the documentation is not reachable from
+the environment this was written in. So the button never depends on it: if the
+link opens Claude with the prompt filled in, good; if it opens a blank chat, or
+nothing is installed to handle it, the prompt is already copied and the message
+says to paste it. The handoff works either way.
+
+On Android the manifest declares an `https` intent query. Without it, from
+Android 11 on, an app cannot see which other apps handle web links and the
+launch silently reports failure.
+
+## Analysis checklist scores
+
+If your sheet carries score columns, each holding shows them under its value:
+
+```
+Fin 14/19 · Moat 11/14        scored 3 weeks ago
+```
+
+The columns are found the same way as quantity and cost — in the tickers'
+header row, matched on the leading word, and never a column another kind has
+already claimed. `Financial score`, `Financials`, `Fin score`, `Moat score`,
+`Moat` and `Scored` all work.
+
+**The app records these; it does not compute them.** The 19 financial criteria
+need multi-year statements and peer benchmarking, and several of the 14 moat
+criteria are outright qualitative — whether a brand commands premium pricing is
+not something a price feed can answer. The judgement is made elsewhere and the
+sheet is where it is written down.
+
+**A score always carries its age**, because it is a snapshot. One from six
+months ago may predate two earnings reports, and a stale judgement shown as
+current is the way this feature would mislead. Past six months it is labelled
+**stale** — in words and by contrast, never by colour, because red already
+means a loss on that row and a stale date in the same red would read as a bad
+number rather than an old one.
+
+**Two things are refused rather than guessed:**
+
+- A score outside its scale. A 25 against 19 is a slip, and displaying it would
+  lend a wrong number the authority of a score. A written `14/19` is accepted,
+  but `11/19` in the moat column is refused — the denominator disagrees, so
+  that cell is not a moat score.
+- An ambiguous date. `2026-08-15` and `15/08/2026` are read; **`03/04/2026` is
+  not**, because it is March 4th to half the world and April 3rd to the other
+  half. Since this date drives the staleness label, being a month wrong would
+  make an old score look current. The row says `no date` so the sheet can be
+  corrected. **Format the column as `YYYY-MM-DD` and it always reads.**
+
+A holding scored but undated keeps its scores: the date is what is missing, not
+the judgement.
+
 ## How often prices update
 
 There is no live tick feed here. Yahoo's chart endpoint is a request-response
@@ -448,7 +514,7 @@ trading decisions.
 lib/main.dart            App root, providers and theme wiring
 lib/models/
   types.dart             PricePoint, Candle, Quote, History, ChartWindow
-  holding.dart           A holding, its size and cost; per-currency totals
+  holding.dart           A holding, its size, cost and scores; totals
   alert.dart             PriceAlert and the pure firing logic (unit tested)
   crossover.dart         Which crossovers exist and what they are called
 lib/api/
@@ -472,7 +538,7 @@ lib/utils/
   format.dart            Price, change and date formatting
   chart.dart             Line and candle geometry, zoom limits (unit tested)
   indicators.dart        Moving averages, Wilder RSI, crossings (unit tested)
-  portfolio_csv.dart     Holdings, share counts and costs from CSV (tested)
+  portfolio_csv.dart     Holdings, counts, costs and scores from CSV (tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension
 test/                    Tests and payload fixtures
 ```

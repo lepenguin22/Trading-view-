@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../models/holding.dart';
 import '../models/types.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/portfolio_csv.dart' show financialScoreMax, moatScoreMax;
 import 'change_pill.dart';
 import 'sparkline.dart';
 
@@ -21,6 +23,7 @@ class QuoteRow extends StatelessWidget {
     this.hasAlert = false,
     this.shares,
     this.costPerShare,
+    this.holding,
   });
 
   final String symbol;
@@ -43,6 +46,10 @@ class QuoteRow extends StatelessWidget {
   /// Average price paid, when the sheet has a cost column. Drives the return
   /// shown beside the position's value.
   final double? costPerShare;
+
+  /// The portfolio entry, when this row is a holding. Carries the checklist
+  /// scores; null on the watchlist.
+  final Holding? holding;
 
   @override
   Widget build(BuildContext context) {
@@ -178,6 +185,10 @@ class QuoteRow extends StatelessWidget {
                           ],
                         ),
                       ],
+                      if (holding?.hasScores ?? false) ...[
+                        const SizedBox(height: 4),
+                        _Scores(holding: holding!),
+                      ],
                     ],
                   ),
                 ),
@@ -228,6 +239,73 @@ class QuoteRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The analysis checklist scores, and how old they are.
+///
+/// The age is never omitted when it is known: a score is a snapshot of a
+/// judgement, and one from six months ago may predate two earnings reports.
+/// Presenting it without its date would be the way this misleads.
+class _Scores extends StatelessWidget {
+  const _Scores({required this.holding});
+
+  final Holding holding;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final scoredAt = holding.scoredAt;
+    final stale = scoredAt != null && isScoreStale(scoredAt);
+
+    final parts = <String>[
+      if (holding.financialScore != null)
+        'Fin ${holding.financialScore}/$financialScoreMax',
+      if (holding.moatScore != null) 'Moat ${holding.moatScore}/$moatScoreMax',
+    ];
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Text(
+            parts.join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tabularFigures.copyWith(
+              color: c.textMuted,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(width: 6),
+        Flexible(
+          child: Text(
+            // A date the sheet had but could not be read says so, rather than
+            // leaving a score looking timeless.
+            scoredAt == null
+                ? 'no date'
+                : stale
+                ? '${formatScoredAt(scoredAt)} · stale'
+                : formatScoredAt(scoredAt),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              // Staleness is said in words and shown by contrast, never by
+              // colour: red already means a loss on this row, and a stale date
+              // in the same red would read as a bad number rather than an old
+              // one. Amber is no better — it sits too close to the down-red
+              // under common colour vision deficiencies.
+              color: stale ? c.textMuted : c.textFaint,
+              fontSize: 11.5,
+              fontStyle: FontStyle.italic,
+              fontWeight: stale ? FontWeight.w600 : FontWeight.w400,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

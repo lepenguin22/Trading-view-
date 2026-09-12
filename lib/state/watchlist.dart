@@ -415,6 +415,9 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
           symbol: symbol,
           shares: raw.shares,
           costPerShare: raw.costPerShare,
+          financialScore: raw.financialScore,
+          moatScore: raw.moatScore,
+          scoredAt: raw.scoredAt,
         ),
       );
     }

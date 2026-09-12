@@ -62,6 +62,28 @@ const _costLeadingWords = {
   'entry',
 };
 
+/// Header names that mark the financial-score column.
+///
+/// The score comes from the analysis framework, which the app cannot run: the
+/// 19 criteria need multi-year statements and peer benchmarking, and no price
+/// feed carries those. The sheet is where a judgement already made gets
+/// recorded, so the app reads it rather than pretending to compute it.
+const _financialScoreHeaders = {'financial score', 'fin score', 'financials'};
+const _financialScoreLeadingWords = {'financial', 'fundamentals'};
+
+/// Header names that mark the moat-score column.
+const _moatScoreHeaders = {'moat score', 'moat'};
+const _moatScoreLeadingWords = {'moat', 'economic'};
+
+/// Header names that mark the date the scores were arrived at.
+const _scoredHeaders = {'scored', 'score date', 'date scored', 'reviewed'};
+const _scoredLeadingWords = {'scored', 'analysed', 'analyzed', 'reviewed'};
+
+/// The scales the framework scores on. A value outside these is a data-entry
+/// slip, not a score, and is refused rather than displayed.
+const financialScoreMax = 19;
+const moatScoreMax = 14;
+
 const _maxScanRows = 5000;
 
 /// Extracts the holdings from the first table in [csv].
@@ -110,6 +132,30 @@ List<Holding> parseHoldingsCsv(String csv) {
     // it, so a quantity is never also read as a price.
     skip: {header.column, ?sharesColumn},
   );
+  final claimed = {header.column, ?sharesColumn, ?costColumn};
+
+  final financialScoreColumn = _findColumn(
+    headerRow,
+    exact: _financialScoreHeaders,
+    leading: _financialScoreLeadingWords,
+    skip: claimed,
+  );
+  if (financialScoreColumn != null) claimed.add(financialScoreColumn);
+
+  final moatScoreColumn = _findColumn(
+    headerRow,
+    exact: _moatScoreHeaders,
+    leading: _moatScoreLeadingWords,
+    skip: claimed,
+  );
+  if (moatScoreColumn != null) claimed.add(moatScoreColumn);
+
+  final scoredAtColumn = _findColumn(
+    headerRow,
+    exact: _scoredHeaders,
+    leading: _scoredLeadingWords,
+    skip: claimed,
+  );
 
   final seen = <String>{};
   final out = <Holding>[];
@@ -134,6 +180,18 @@ List<Holding> parseHoldingsCsv(String csv) {
         costPerShare: costColumn == null
             ? null
             : parseMoney(_cell(rows[r], costColumn)),
+        financialScore: financialScoreColumn == null
+            ? null
+            : parseScore(
+                _cell(rows[r], financialScoreColumn),
+                financialScoreMax,
+              ),
+        moatScore: moatScoreColumn == null
+            ? null
+            : parseScore(_cell(rows[r], moatScoreColumn), moatScoreMax),
+        scoredAt: scoredAtColumn == null
+            ? null
+            : parseSheetDate(_cell(rows[r], scoredAtColumn)),
       ),
     );
   }
@@ -184,6 +242,76 @@ String _normaliseHeader(String raw) =>
 /// spaces, and sometimes a trailing unit. Anything that does not resolve to a
 /// finite number is null — an unreadable quantity must not become a zero, or a
 /// real position would silently value at nothing.
+/// Reads a checklist score out of a cell, as a whole number within [max].
+///
+/// Accepts a bare "14" and a written "14/19" — a sheet maintained by hand will
+/// have both. Anything outside 0..[max] is refused: a 25 against a scale of 19
+/// is a slip, and showing it would lend a wrong number the authority of a
+/// score.
+int? parseScore(String raw, int max) {
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+
+  // "14 / 19" — take the numerator; the denominator is the scale we already
+  // know. A denominator that disagrees means the cell is not this scale's
+  // score, so the whole cell is refused rather than half-read.
+  final fraction = RegExp(r'^(-?\d+)\s*/\s*(\d+)$').firstMatch(text);
+  if (fraction != null) {
+    if (int.tryParse(fraction.group(2)!) != max) return null;
+    return _scoreWithin(int.tryParse(fraction.group(1)!), max);
+  }
+
+  return _scoreWithin(int.tryParse(text), max);
+}
+
+int? _scoreWithin(int? value, int max) {
+  if (value == null || value < 0 || value > max) return null;
+  return value;
+}
+
+/// Reads the date a score was arrived at.
+///
+/// ISO (2026-08-15) is read directly. A slashed or dotted date is read only
+/// when the order is unambiguous — one component above 12 can only be the day.
+/// A date like 03/04/2026 is deliberately refused: it is March 4th to half the
+/// world and April 3rd to the other half, and this date drives a staleness
+/// indicator, where being a month wrong would make an old score look current.
+/// The app says the date could not be read so the sheet can be corrected.
+DateTime? parseSheetDate(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+
+  final iso = RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2})$').firstMatch(text);
+  if (iso != null) {
+    return _dateFrom(
+      int.parse(iso.group(1)!),
+      int.parse(iso.group(2)!),
+      int.parse(iso.group(3)!),
+    );
+  }
+
+  final parts = RegExp(r'^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$')
+      .firstMatch(text);
+  if (parts == null) return null;
+
+  final first = int.parse(parts.group(1)!);
+  final second = int.parse(parts.group(2)!);
+  final year = int.parse(parts.group(3)!);
+
+  if (first > 12 && second <= 12) return _dateFrom(year, second, first);
+  if (second > 12 && first <= 12) return _dateFrom(year, first, second);
+  // Both plausible as a month: ambiguous, so unreadable.
+  return null;
+}
+
+/// Builds a date, rejecting one the calendar rolled over (31 February).
+DateTime? _dateFrom(int year, int month, int day) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  final date = DateTime(year, month, day);
+  if (date.year != year || date.month != month || date.day != day) return null;
+  return date;
+}
+
 /// Reads a money amount out of a spreadsheet cell.
 ///
 /// Same tolerance as [parseShares], plus the currency marks a sheet writes

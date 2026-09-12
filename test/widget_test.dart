@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:http/http.dart' as http;
@@ -226,6 +227,104 @@ void main() {
     // Sheet closed, and the alert is listed against the symbol.
     expect(find.text('Alert me when AAPL'), findsNothing);
     expect(find.textContaining('rises to or above'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the analysis button copies the prompt even if Claude will not '
+      'open', (tester) async {
+    // url_launcher has no platform behind it under flutter test, so launching
+    // fails — which is exactly the path that must still leave the user able to
+    // run the analysis.
+    final clipboard = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboard.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    // Answers "could not open" deterministically, rather than leaving the
+    // plugin with no platform behind it and the future never completing.
+    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      launcher,
+      (call) async => false,
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, null)
+        ..setMockMethodCallHandler(launcher, null);
+    });
+
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final button = find.widgetWithText(
+      OutlinedButton,
+      'Run framework analysis',
+    );
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(clipboard, ['Run the framework on AAPL']);
+    // And the user is told what to do with it rather than left guessing.
+    expect(find.textContaining('Paste it into Claude'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the analysis button opens Claude carrying the prompt', (
+    tester,
+  ) async {
+    final launched = <String>[];
+    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(launcher, (
+      call,
+    ) async {
+      final url = (call.arguments as Map)['url'];
+      if (url is String) launched.add(url);
+      return true;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, null)
+        ..setMockMethodCallHandler(launcher, null);
+    });
+
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final button = find.widgetWithText(
+      OutlinedButton,
+      'Run framework analysis',
+    );
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(launched, hasLength(1));
+    final uri = Uri.parse(launched.single);
+    expect(uri.host, 'claude.ai');
+    // The prompt survives being put in the link, rather than the link merely
+    // opening a blank chat.
+    expect(uri.queryParameters['q'], 'Run the framework on AAPL');
+    expect(find.textContaining('Opening Claude'), findsOneWidget);
 
     await teardown(tester);
   });
@@ -973,6 +1072,114 @@ void main() {
     // The value still shows; there is simply no return to report.
     expect(find.text('\$1,000.00'), findsOneWidget);
     expect(find.text('Since bought'), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a holding shows its checklist scores and their age', (
+    tester,
+  ) async {
+    final scoredAt = DateTime.now().subtract(const Duration(days: 21));
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14,'
+          '"moatScore":11,"scoredAt":${scoredAt.millisecondsSinceEpoch}}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fin 14/19 · Moat 11/14'), findsOneWidget);
+    expect(find.text('scored 3 weeks ago'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a stale score is called stale, not coloured like a loss', (
+    tester,
+  ) async {
+    final scoredAt = DateTime.now().subtract(const Duration(days: 260));
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":8,'
+          '"moatScore":4,"scoredAt":${scoredAt.millisecondsSinceEpoch}}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    // Said in words. Red is already the loss colour on this row, so staleness
+    // must not be carried by colour alone.
+    final label = find.textContaining('stale');
+    expect(label, findsOneWidget);
+
+    final colors = Theme.of(tester.element(label)).extension<AppColors>()!;
+    expect(tester.widget<Text>(label).style?.color, isNot(colors.down));
+
+    await teardown(tester);
+  });
+
+  testWidgets('a score with no readable date says so', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    // Only one score, and no date — the score still shows, but it must not
+    // look timeless.
+    expect(find.text('Fin 14/19'), findsOneWidget);
+    expect(find.text('no date'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a holding with no scores shows no score line', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1': '[{"symbol":"AAPL","shares":10}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Fin '), findsNothing);
+    expect(find.text('no date'), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the watchlist never shows scores, only the portfolio does', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"MSFT","shares":10,"financialScore":14}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    // The watchlist tab is showing.
+    expect(find.textContaining('Fin '), findsNothing);
 
     await teardown(tester);
   });

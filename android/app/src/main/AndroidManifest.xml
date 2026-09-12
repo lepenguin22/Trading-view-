@@ -45,5 +45,14 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Required from Android 11 (API 30) on: without declaring the
+             intent it wants to resolve, an app cannot see which other apps
+             handle https links, and launching one silently reports failure.
+             This is what lets the "Run framework analysis" button open
+             Claude. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
 </manifest>

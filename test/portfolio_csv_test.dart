@@ -250,6 +250,168 @@ void main() {
     });
   });
 
+  group('checklist scores', () {
+    test('reads both scores and the date they were arrived at', () {
+      const csv =
+          'Ticker,Shares,Financial score,Moat score,Scored\n'
+          'AAPL,10,14,11,2026-08-15\n';
+      final holding = parseHoldingsCsv(csv).single;
+
+      expect(holding.financialScore, 14);
+      expect(holding.moatScore, 11);
+      expect(holding.scoredAt, DateTime(2026, 8, 15));
+      expect(holding.hasScores, isTrue);
+    });
+
+    test('accepts a written fraction as well as a bare number', () {
+      const csv = 'Ticker,Financial score,Moat score\nAAPL,14/19,11 / 14\n';
+      final holding = parseHoldingsCsv(csv).single;
+
+      expect(holding.financialScore, 14);
+      expect(holding.moatScore, 11);
+    });
+
+    test('refuses a fraction whose denominator is the wrong scale', () {
+      // "11/19" in the moat column is not a moat score; half-reading it as 11
+      // would silently rescale someone's judgement.
+      expect(parseScore('11/19', moatScoreMax), isNull);
+      expect(parseScore('14/14', financialScoreMax), isNull);
+    });
+
+    test('refuses a score outside its scale', () {
+      // A 25 against a scale of 19 is a slip, not a score.
+      expect(parseScore('25', financialScoreMax), isNull);
+      expect(parseScore('-1', financialScoreMax), isNull);
+      expect(parseScore('15', moatScoreMax), isNull);
+      // The bounds themselves are valid.
+      expect(parseScore('0', financialScoreMax), 0);
+      expect(parseScore('19', financialScoreMax), 19);
+      expect(parseScore('14', moatScoreMax), 14);
+    });
+
+    test('refuses anything that is not a whole score', () {
+      expect(parseScore('', financialScoreMax), isNull);
+      expect(parseScore('n/a', financialScoreMax), isNull);
+      expect(parseScore('good', financialScoreMax), isNull);
+      expect(parseScore('12.5', financialScoreMax), isNull);
+    });
+
+    test('a sheet without score columns still imports', () {
+      const csv = 'Ticker,Shares\nAAPL,10\n';
+      final holding = parseHoldingsCsv(csv).single;
+
+      expect(holding.financialScore, isNull);
+      expect(holding.moatScore, isNull);
+      expect(holding.hasScores, isFalse);
+    });
+
+    test('accepts the header spellings a sheet would use', () {
+      for (final header in [
+        'Financial score',
+        'Financials',
+        'Financial',
+        'Fin score',
+        'Fundamentals score',
+      ]) {
+        expect(
+          parseHoldingsCsv('Ticker,$header\nAAPL,14\n').single.financialScore,
+          14,
+          reason: '"$header" should mark the financial score column',
+        );
+      }
+      for (final header in ['Moat score', 'Moat', 'Economic moat']) {
+        expect(
+          parseHoldingsCsv('Ticker,$header\nAAPL,11\n').single.moatScore,
+          11,
+          reason: '"$header" should mark the moat score column',
+        );
+      }
+    });
+
+    test('a score column is never confused with a money column', () {
+      // The cost matcher leads on "average"; neither score matcher may take a
+      // column the cost already claimed.
+      const csv =
+          'Ticker,Shares bought,Average price,Financial score,Moat score\n'
+          'AAPL,10,50,14,11\n';
+      final holding = parseHoldingsCsv(csv).single;
+
+      expect(holding.shares, 10);
+      expect(holding.costPerShare, 50);
+      expect(holding.financialScore, 14);
+      expect(holding.moatScore, 11);
+    });
+  });
+
+  group('scores in the real sheet layout', () {
+    test('reads the score columns appended to the holdings table', () {
+      final byTicker = {for (final h in parseHoldingsCsv(sheet)) h.symbol: h};
+
+      expect(byTicker['AAA']!.financialScore, 14);
+      expect(byTicker['AAA']!.moatScore, 11);
+      expect(byTicker['AAA']!.scoredAt, DateTime(2026, 8, 15));
+      expect(byTicker['BRK-B']!.financialScore, 7);
+    });
+
+    test('a holding scored but undated keeps its scores', () {
+      // The date is what is missing, not the judgement. Dropping the scores
+      // would throw away the more useful half.
+      final ddd = parseHoldingsCsv(sheet)
+          .firstWhere((h) => h.symbol == 'DDD.L');
+
+      expect(ddd.financialScore, 11);
+      expect(ddd.moatScore, 8);
+      expect(ddd.scoredAt, isNull);
+    });
+
+    test('the score columns do not disturb quantity or cost', () {
+      final byTicker = {for (final h in parseHoldingsCsv(sheet)) h.symbol: h};
+
+      expect(byTicker['AAA']!.shares, 10);
+      expect(byTicker['AAA']!.costPerShare, 100);
+    });
+
+    test('the closed-positions table still contributes nothing', () {
+      final symbols = symbolsIn(sheet);
+
+      expect(symbols, ['AAA', 'BBB', 'CCC', 'DDD.L', 'BRK-B']);
+      expect(symbols, isNot(contains('ZZZ')));
+    });
+  });
+
+  group('parseSheetDate', () {
+    test('reads an ISO date', () {
+      expect(parseSheetDate('2026-08-15'), DateTime(2026, 8, 15));
+      expect(parseSheetDate('2026-8-5'), DateTime(2026, 8, 5));
+    });
+
+    test('reads a slashed date when the order is unambiguous', () {
+      // 15 cannot be a month, so this is the 15th whichever convention.
+      expect(parseSheetDate('15/08/2026'), DateTime(2026, 8, 15));
+      expect(parseSheetDate('08/15/2026'), DateTime(2026, 8, 15));
+      expect(parseSheetDate('15.08.2026'), DateTime(2026, 8, 15));
+    });
+
+    test('refuses an ambiguous date rather than guessing', () {
+      // 03/04/2026 is March 4th to half the world and April 3rd to the other
+      // half. This date drives a staleness indicator, where being a month
+      // wrong would make an old score look current.
+      expect(parseSheetDate('03/04/2026'), isNull);
+      expect(parseSheetDate('12/11/2026'), isNull);
+    });
+
+    test('refuses a date the calendar does not have', () {
+      expect(parseSheetDate('2026-02-31'), isNull);
+      expect(parseSheetDate('2026-13-01'), isNull);
+    });
+
+    test('refuses anything that is not a date', () {
+      expect(parseSheetDate(''), isNull);
+      expect(parseSheetDate('last week'), isNull);
+      expect(parseSheetDate('2026'), isNull);
+    });
+  });
+
   group('parseShares', () {
     test('reads plain and thousands-separated numbers', () {
       expect(parseShares('10'), 10);
