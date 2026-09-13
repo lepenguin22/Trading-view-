@@ -90,11 +90,23 @@ jobs:
           echo "Using $tools"
 
           "$tools/aapt2" dump badging "$apk" \
-            | grep -E "^(package|sdkVersion|targetSdkVersion|native-code)" \
+            | grep -E "^(package|minSdkVersion|sdkVersion|targetSdkVersion|native-code)" \
             | tee /tmp/badging.txt
 
-          "$tools/apksigner" verify --print-certs -v "$apk" \
-            | grep -E "Verified using|Signer #1 certificate DN" || true
+          # Unfiltered on purpose. Which key signed the APK decides whether a
+          # phone that already has the previous build will accept this one, and
+          # a wrong answer shows up only as "App not installed" with nothing
+          # else — so the whole certificate goes in the log.
+          "$tools/apksigner" verify --print-certs -v "$apk"
+
+          # Where that key came from. Without a keystore the build falls back to
+          # Android's debug key, which is generated per machine on first use; a
+          # runner is a fresh container every time. If this file was created
+          # during this job, then every CI build carries a different
+          # certificate and none of them can install over another.
+          echo "--- debug keystore ---"
+          ls -l --time-style=full-iso ~/.android/debug.keystore || echo "absent"
+          date -u "+now is %Y-%m-%d %H:%M:%S"
 
           # The keystore-less build must carry its own application id, or it
           # collides with a real signed install and Android refuses it.
@@ -107,9 +119,9 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          # Named for what it is: debug-signed, so it installs for testing but
-          # is not a store build.
-          name: app-release-debugsigned-apk
+          # Named for what it is: signed with the public CI key, so it
+          # installs for testing but is not a store build.
+          name: app-release-ci-signed-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
