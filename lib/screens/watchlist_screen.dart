@@ -9,6 +9,7 @@ import '../widgets/portfolio_summary.dart';
 import '../widgets/quote_row.dart';
 import 'alerts_screen.dart';
 import 'detail_screen.dart';
+import 'calculator_screen.dart';
 import 'import_screen.dart';
 import 'settings_screen.dart';
 import 'search_screen.dart';
@@ -86,16 +87,22 @@ class _WatchlistScreenState extends State<WatchlistScreen>
           PopupMenuButton<String>(
             tooltip: 'More',
             onSelected: (value) {
-              if (value == 'import') {
-                _openImport();
-              } else {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
-                );
+              switch (value) {
+                case 'import':
+                  _openImport();
+                case 'calculator':
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const CalculatorScreen()),
+                  );
+                case _:
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
               }
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'import', child: Text('Import portfolio')),
+              PopupMenuItem(value: 'calculator', child: Text('Calculator')),
               PopupMenuItem(value: 'settings', child: Text('Settings')),
             ],
           ),
