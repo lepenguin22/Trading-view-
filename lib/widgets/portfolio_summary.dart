@@ -126,16 +126,22 @@ class _Total extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 10),
-              Text(
-                percent == null
-                    ? formatSignedValue(change, total.currency)
-                    : '${formatSignedValue(change, total.currency)} '
-                          '(${formatPercent(percent)})',
-                maxLines: 1,
-                style: tabularFigures.copyWith(
-                  color: color,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
+              // Flexible like the total beside it. Left to size itself, a
+              // six-figure portfolio's day change pushed this row off the
+              // right edge of a narrow phone.
+              Flexible(
+                child: Text(
+                  percent == null
+                      ? formatSignedValue(change, total.currency)
+                      : '${formatSignedValue(change, total.currency)} '
+                            '(${formatPercent(percent)})',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tabularFigures.copyWith(
+                    color: color,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
               Text(

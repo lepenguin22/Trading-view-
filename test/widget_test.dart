@@ -65,6 +65,38 @@ void main() {
     });
   }
 
+  /// Whether [text] appears inside the list row for [symbol].
+  ///
+  /// Scoped to the row on purpose. The portfolio total above the list carries
+  /// the same kind of figure, so a bare `find.text` would pass on the wrong
+  /// widget and stop proving that the row itself says anything.
+  bool rowFigure(WidgetTester tester, String symbol, String text) {
+    final row = find.ancestor(
+      of: find.text(symbol),
+      matching: find.byType(InkWell),
+    );
+    expect(row, findsWidgets, reason: 'no list row found for $symbol');
+    return tester
+        .widgetList<Text>(
+          find.descendant(of: row.first, matching: find.byType(Text)),
+        )
+        .any((t) => t.data == text);
+  }
+
+  /// Whether [text] appears inside the portfolio summary above the list.
+  ///
+  /// The counterpart to [rowFigure]: a one-holding portfolio's total equals
+  /// that holding's row value, so neither assertion proves anything unless it
+  /// says which of the two it means.
+  bool summaryFigure(WidgetTester tester, String text) => tester
+      .widgetList<Text>(
+        find.descendant(
+          of: find.byType(PortfolioSummary),
+          matching: find.byType(Text),
+        ),
+      )
+      .any((t) => t.data == text);
+
   /// Tears the tree down so the model's polling timer is cancelled; a pending
   /// timer would otherwise fail the test.
   Future<void> teardown(WidgetTester tester) async {
@@ -1046,9 +1078,12 @@ void main() {
     expect(find.text('\$1,500.00'), findsOneWidget);
     expect(find.text('2 holdings'), findsOneWidget);
 
-    // And each row states its own size and worth.
-    expect(find.textContaining('10 shares · \$1,000.00'), findsOneWidget);
-    expect(find.textContaining('5 shares · \$500.00'), findsOneWidget);
+    // And each row states its own size and worth, in its own row rather than
+    // anywhere on the screen: the totals above carry the same kind of figure.
+    expect(rowFigure(tester, 'AAPL', '10 shares'), isTrue);
+    expect(rowFigure(tester, 'AAPL', '\$1,000.00'), isTrue);
+    expect(rowFigure(tester, 'MSFT', '5 shares'), isTrue);
+    expect(rowFigure(tester, 'MSFT', '\$500.00'), isTrue);
 
     await teardown(tester);
   });
@@ -1120,7 +1155,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // The value still shows; there is simply no return to report.
-    expect(find.text('\$1,000.00'), findsOneWidget);
+    expect(summaryFigure(tester, '\$1,000.00'), isTrue);
     expect(find.text('Since bought'), findsNothing);
 
     await teardown(tester);
@@ -1266,7 +1301,7 @@ void main() {
     await tester.tap(find.text('Portfolio (2)'));
     await tester.pumpAndSettle();
 
-    expect(find.text('\$1,000.00'), findsOneWidget);
+    expect(summaryFigure(tester, '\$1,000.00'), isTrue);
     expect(find.text('1 holding'), findsOneWidget);
     // Named rather than quietly left out of the sum.
     expect(find.textContaining('1 holding not counted'), findsOneWidget);
@@ -1457,6 +1492,115 @@ void main() {
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
   }
+
+  testWidgets('a big holding lays out on a narrow phone', (tester) async {
+    // 360 logical pixels wide, and figures large enough to be awkward: a
+    // six-figure position, a four-figure share count and both scores. A
+    // RenderFlex overflow anywhere in here fails the test on its own.
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"D05.SI","shares":2400,"costPerShare":51.2,'
+          '"financialScore":14,"moatScore":11,"scoredAt":"2026-03-12"}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    // Quoted at 100 against a cost of 51.20: 2,400 shares worth 240,000, and
+    // a day change of +1 a share on the summary above.
+    expect(rowFigure(tester, 'D05.SI', '2,400 shares'), isTrue);
+    expect(rowFigure(tester, 'D05.SI', '\$240,000.00'), isTrue);
+    expect(rowFigure(tester, 'D05.SI', '+95.31%'), isTrue);
+    expect(summaryFigure(tester, '\$240,000.00'), isTrue);
+
+    // Each figure gets its own column, so they line up down the list rather
+    // than running together as one string.
+    expect(find.textContaining('shares · '), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the detail screen states what the position is worth', (
+    tester,
+  ) async {
+    // 10 shares bought at 80, quoted at 100 with a previous close of 99.
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"costPerShare":80}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your position'), findsOneWidget);
+    expect(find.text('Average cost'), findsOneWidget);
+    expect(find.text('\$80.00'), findsOneWidget);
+    expect(find.text('\$800.00'), findsOneWidget);
+    expect(find.text('\$1,000.00'), findsOneWidget);
+
+    // The day's move on the position, not on one share: the price moved 1,
+    // and ten shares are held.
+    expect(find.text('+\$10.00'), findsOneWidget);
+    expect(find.text('+\$200.00'), findsOneWidget);
+    expect(find.text('+25.00%'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a position with no cost shows no return it cannot compute', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1': '[{"symbol":"AAPL","shares":10}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    // Worth and today's move need only a quantity, so they stay.
+    expect(find.text('Position value'), findsOneWidget);
+    expect(find.text('Today'), findsOneWidget);
+
+    // The rest need a purchase price the sheet never gave.
+    expect(find.text('Average cost'), findsNothing);
+    expect(find.text('Cost basis'), findsNothing);
+    expect(find.text('Total return'), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a watchlist symbol gets no position section', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '["AAPL"]',
+      'ticker.portfolio.holdings.v1': '[]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Your position'), findsNothing);
+
+    await teardown(tester);
+  });
 
   testWidgets('the chart legend offers each crossover', (tester) async {
     SharedPreferences.setMockInitialValues({

@@ -271,6 +271,22 @@ different periods.
 A portfolio with no quantities at all shows **no total**, not a zero: having
 nothing to value is a different statement from being worth nothing.
 
+**Where the figures sit.** Share count, position value and return get a band of
+their own across the full width of the row, under a hairline. Squeezed into the
+left column beside the symbol and company name they shared about half the width
+and ellipsised, which is no use for the numbers you actually scan the list for.
+Each is its own column, so they line up down the list and can be compared
+between holdings rather than read one row at a time.
+
+Tapping a holding opens **Your position** on its detail screen: shares, average
+cost, cost basis, what the position is worth, the day's move on the position,
+and the total return — each as money and, where a percentage is the more
+comparable figure, as both. The day's move is on the whole position rather than
+on one share, because "up 1.15%" means something different at either scale. It
+reads the live quote, not the scrubbed chart headline: dragging the chart asks
+what the price was in the past, not what the position is worth now. Rows that
+need a purchase price the sheet never gave are absent rather than shown empty.
+
 Share counts live on the device alongside the tickers, and are sent nowhere —
 the price feed is asked about symbols, never about sizes. A portfolio saved by
 an older build, before quantities existed, still loads; those holdings simply

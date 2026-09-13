@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../api/yahoo.dart';
 import '../models/alert.dart';
 import '../models/crossover.dart';
+import '../models/holding.dart';
 import '../models/types.dart';
 import '../state/alerts.dart';
 import '../state/storage.dart';
@@ -230,6 +231,7 @@ class _DetailScreenState extends State<DetailScreen> {
 
     final quote = model.quotes[widget.symbol];
     final onWatchlist = model.has(widget.symbol);
+    final holding = model.holdingOf(widget.symbol);
     final headline = _buildHeadline();
     final currency = _history?.currency ?? quote?.currency ?? 'USD';
     final color = c.trend(headline?.change ?? 0);
@@ -309,6 +311,10 @@ class _DetailScreenState extends State<DetailScreen> {
               _latestCrossLine(),
               const SizedBox(height: 14),
               RsiPane(values: _rsi, window: _window, gutter: _axisGutter),
+            ],
+            if (holding != null && holding.shares != null) ...[
+              const SizedBox(height: 20),
+              _Position(holding: holding, quote: quote, currency: currency),
             ],
             if (quote != null) ...[
               const SizedBox(height: 20),
@@ -861,6 +867,160 @@ class _Headline {
 
   /// The bar under the finger while scrubbing, so its OHLC can be shown.
   final Candle? candle;
+}
+
+/// What the holding is worth, for a symbol the portfolio owns.
+///
+/// Deliberately shows the position rather than the share price: the price is
+/// already the headline, and "up 1.15%" means something different when it is
+/// 1.15% of a position than when it is 1.15% of one share.
+///
+/// Uses the live quote, not the scrubbed chart headline — dragging the chart
+/// asks what the price was in the past, not what the position is worth now.
+class _Position extends StatelessWidget {
+  const _Position({
+    required this.holding,
+    required this.quote,
+    required this.currency,
+  });
+
+  final Holding holding;
+  final Quote? quote;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final q = quote;
+    final shares = holding.shares!;
+    final cost = holding.costPerShare;
+
+    final value = q == null ? null : holding.valueAt(q.price);
+    final gain = q == null ? null : holding.gainAt(q.price);
+    final basis = holding.costBasis;
+    final gainPercent = gain == null || basis == null || basis == 0
+        ? null
+        : gain / basis * 100;
+
+    // The day's move on the whole position, not on one share.
+    final today = q == null ? null : shares * q.change;
+
+    final rows = <_PositionRow>[
+      _PositionRow('Shares', formatShares(shares)),
+      if (cost != null)
+        _PositionRow('Average cost', formatPrice(cost, currency)),
+      if (basis != null)
+        _PositionRow('Cost basis', formatValue(basis, currency)),
+      _PositionRow(
+        'Position value',
+        value == null ? '—' : formatValue(value, currency),
+      ),
+      if (today != null)
+        _PositionRow(
+          'Today',
+          formatSignedValue(today, currency),
+          percent: formatPercent(q!.changePercent),
+          trend: today,
+        ),
+      if (gain != null)
+        _PositionRow(
+          'Total return',
+          formatSignedValue(gain, currency),
+          percent: gainPercent == null ? null : formatPercent(gainPercent),
+          trend: gain,
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Your position',
+          style: TextStyle(
+            color: c.text,
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Container(
+          decoration: BoxDecoration(
+            color: c.card,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: c.border),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++)
+                Container(
+                  decoration: BoxDecoration(
+                    border: i < rows.length - 1
+                        ? Border(bottom: BorderSide(color: c.border))
+                        : null,
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        rows[i].label,
+                        style: TextStyle(color: c.textMuted, fontSize: 14),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            rows[i].value,
+                            style: tabularFigures.copyWith(
+                              // Only the two rows with a good and a bad direction
+                              // carry colour. Shares and cost have neither.
+                              color: rows[i].trend == null
+                                  ? c.text
+                                  : c.trend(rows[i].trend!),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (rows[i].percent != null) ...[
+                            const SizedBox(width: 10),
+                            Text(
+                              rows[i].percent!,
+                              style: tabularFigures.copyWith(
+                                color: rows[i].trend == null
+                                    ? c.textMuted
+                                    : c.trend(rows[i].trend!),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PositionRow {
+  const _PositionRow(this.label, this.value, {this.percent, this.trend});
+
+  final String label;
+  final String value;
+
+  /// Shown beside the amount, for the rows where a percentage is the more
+  /// comparable figure.
+  final String? percent;
+
+  /// Signed amount deciding the row's colour, or null for a row that has no
+  /// good or bad direction.
+  final double? trend;
 }
 
 class _Stats extends StatelessWidget {
