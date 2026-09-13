@@ -8,6 +8,7 @@ import '../models/alert.dart';
 import '../models/crossover.dart';
 import '../models/types.dart';
 import '../state/alerts.dart';
+import '../state/storage.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/chart.dart';
@@ -751,10 +752,16 @@ class _DetailScreenState extends State<DetailScreen> {
     await Clipboard.setData(ClipboardData(text: prompt));
     if (!mounted) return;
 
+    // Read per tap rather than held: the project can be changed in settings
+    // while a detail screen is open behind it.
+    final saved = await WatchlistStorage().loadClaudeProjectUrl();
+    if (!mounted) return;
+    final project = saved == null ? null : parseClaudeProjectUrl(saved);
+
     var opened = false;
     try {
       opened = await launchUrl(
-        claudeUriFor(prompt),
+        claudeUriFor(prompt, projectUrl: project),
         mode: LaunchMode.externalApplication,
       );
     } catch (error) {
@@ -768,7 +775,9 @@ class _DetailScreenState extends State<DetailScreen> {
       SnackBar(
         content: Text(
           opened
-              ? 'Opening Claude. The prompt is on your clipboard too.'
+              ? project == null
+                    ? 'Opening Claude. The prompt is on your clipboard too.'
+                    : 'Opening your project. Paste the prompt to start.'
               : 'Prompt copied. Paste it into Claude to run the analysis.',
         ),
       ),

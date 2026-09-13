@@ -10,6 +10,7 @@ const _sheetUrlKey = 'ticker.portfolio.sheetUrl.v1';
 const _portfolioKey = 'ticker.portfolio.symbols.v1';
 const _holdingsKey = 'ticker.portfolio.holdings.v1';
 const _quotesKey = 'ticker.watchlist.quotes.v1';
+const _claudeProjectKey = 'ticker.analysis.claudeProject.v1';
 
 /// Written by the removed fair-value feature. Purged on launch: the first is
 /// an API key, and leaving a credential in app storage with no screen left to
@@ -137,6 +138,32 @@ class WatchlistStorage {
       await (await _prefs).setString(_sheetUrlKey, url);
     } catch (_) {
       // Ignore: the import still worked, it just will not be remembered.
+    }
+  }
+
+  /// The Claude project an analysis should start in.
+  ///
+  /// Stored on the device rather than compiled in: it identifies one person's
+  /// project, and this repository is public.
+  Future<String?> loadClaudeProjectUrl() async {
+    try {
+      return (await _prefs).getString(_claudeProjectKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Saves the project URL, or forgets it when given nothing.
+  Future<void> saveClaudeProjectUrl(String url) async {
+    try {
+      final prefs = await _prefs;
+      if (url.trim().isEmpty) {
+        await prefs.remove(_claudeProjectKey);
+      } else {
+        await prefs.setString(_claudeProjectKey, url.trim());
+      }
+    } catch (_) {
+      // Ignore: analyses still start, just in a chat outside the project.
     }
   }
 

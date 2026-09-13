@@ -288,6 +288,18 @@ answer instead of the structured deep dive. Nothing else is sent: position size
 would anchor the analysis to a holding already owned, and the chart's current
 technicals answer a question the framework asks for itself.
 
+**Set a project under Settings** and the button opens that project instead of a
+new chat, so an analysis starts where the framework and its history already
+are. Paste the project's address; a link copied from a chat inside the project
+resolves to the project itself, and anything that is not a claude.ai project
+link is refused rather than stored — sending the button somewhere arbitrary
+would be worse than falling back to a new chat.
+
+Claude has no documented way to open a new chat *already inside* a project, so
+the button lands on the project and the prompt is pasted from the clipboard.
+The prompt is attached to the link regardless, so if that ever starts being
+filled in automatically it will simply begin working.
+
 **The clipboard copy happens first, and it is the part that matters.** Whether
 a link can carry text into Claude is not something this project can guarantee —
 the behaviour has changed before, and the documentation is not reachable from
@@ -295,6 +307,9 @@ the environment this was written in. So the button never depends on it: if the
 link opens Claude with the prompt filled in, good; if it opens a blank chat, or
 nothing is installed to handle it, the prompt is already copied and the message
 says to paste it. The handoff works either way.
+
+The project link is stored on the device, never compiled in: it identifies one
+person's project and this repository is public.
 
 On Android the manifest declares an `https` intent query. Without it, from
 Android 11 on, an app cannot see which other apps handle web links and the
@@ -531,7 +546,7 @@ lib/background/
   alert_worker.dart      Background entry point, check routine and scheduling
 lib/notifications/
   notifications.dart     Local notification channel, permission and posting
-lib/screens/             Watchlist, Search, Detail, Alerts, Import
+lib/screens/             Watchlist, Search, Detail, Alerts, Import, Settings
 lib/widgets/             QuoteRow, PriceChart, RsiPane, Sparkline, ChangePill,
                          AlertSheet, PortfolioSummary
 lib/utils/

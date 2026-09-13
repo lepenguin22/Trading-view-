@@ -11,8 +11,10 @@ import 'package:ticker/api/yahoo.dart';
 import 'package:ticker/main.dart';
 import 'package:ticker/api/portfolio_source.dart';
 import 'package:ticker/screens/import_screen.dart';
+import 'package:ticker/screens/settings_screen.dart';
 import 'package:ticker/screens/watchlist_screen.dart';
 import 'package:ticker/state/alerts.dart';
+import 'package:ticker/state/storage.dart';
 import 'package:ticker/state/watchlist.dart';
 import 'package:ticker/theme/app_theme.dart';
 import 'package:ticker/models/crossover.dart';
@@ -325,6 +327,54 @@ void main() {
     // opening a blank chat.
     expect(uri.queryParameters['q'], 'Run the framework on AAPL');
     expect(find.textContaining('Opening Claude'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the analysis button opens the saved project', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.analysis.claudeProject.v1': 'https://claude.ai/project/abc123',
+    });
+
+    final launched = <String>[];
+    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(launcher, (
+      call,
+    ) async {
+      final url = (call.arguments as Map)['url'];
+      if (url is String) launched.add(url);
+      return true;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, null)
+        ..setMockMethodCallHandler(launcher, null);
+    });
+
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+
+    final button = find.widgetWithText(
+      OutlinedButton,
+      'Run framework analysis',
+    );
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    expect(launched, hasLength(1));
+    final uri = Uri.parse(launched.single);
+    expect(uri.path, '/project/abc123');
+    expect(uri.queryParameters['q'], 'Run the framework on AAPL');
+    expect(find.textContaining('Opening your project'), findsOneWidget);
 
     await teardown(tester);
   });
@@ -1485,7 +1535,26 @@ void main() {
     await teardown(tester);
   });
 
-  testWidgets('the import screen is reachable from the app bar', (
+  testWidgets('import and settings live in the overflow menu', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import portfolio'), findsOneWidget);
+    expect(find.text('Settings'), findsOneWidget);
+
+    await tester.tap(find.text('Import portfolio'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImportScreen), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the settings screen is reachable and saves a project', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
@@ -1493,10 +1562,50 @@ void main() {
     await tester.pumpWidget(appWith(feedResolving()));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Import portfolio'));
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Settings'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(ImportScreen), findsOneWidget);
+    expect(find.byType(SettingsScreen), findsOneWidget);
+
+    await tester.enterText(
+      find.byType(TextField),
+      'https://claude.ai/project/abc123',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Saved'), findsOneWidget);
+    expect(
+      await WatchlistStorage().loadClaudeProjectUrl(),
+      'https://claude.ai/project/abc123',
+    );
+
+    await teardown(tester);
+  });
+
+  testWidgets('the settings screen refuses a link that is not a project', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('More'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Settings'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'https://example.com/hi');
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+
+    // Refused rather than stored: sending the button somewhere arbitrary
+    // would be worse than falling back to a new chat.
+    expect(find.textContaining('not a Claude project link'), findsOneWidget);
+    expect(await WatchlistStorage().loadClaudeProjectUrl(), isNull);
 
     await teardown(tester);
   });

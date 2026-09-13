@@ -37,6 +37,61 @@ void main() {
     });
   });
 
+  group('parseClaudeProjectUrl', () {
+    test('reads a project link', () {
+      expect(
+        parseClaudeProjectUrl('https://claude.ai/project/abc123').toString(),
+        'https://claude.ai/project/abc123',
+      );
+    });
+
+    test('accepts what a user actually copies', () {
+      // Trailing slash, query junk, www, no scheme, surrounding spaces.
+      for (final raw in [
+        'https://claude.ai/project/abc123/',
+        'https://claude.ai/project/abc123?foo=bar',
+        'https://www.claude.ai/project/abc123',
+        'claude.ai/project/abc123',
+        '  https://claude.ai/project/abc123  ',
+      ]) {
+        expect(
+          parseClaudeProjectUrl(raw).toString(),
+          'https://claude.ai/project/abc123',
+          reason: 'should read "$raw"',
+        );
+      }
+    });
+
+    test('a chat inside a project resolves to the project', () {
+      // Copying the address bar mid-conversation is the likely mistake, and
+      // the project is what was meant.
+      expect(
+        parseClaudeProjectUrl('https://claude.ai/project/abc123/chat/xyz789')
+            .toString(),
+        'https://claude.ai/project/abc123',
+      );
+    });
+
+    test('refuses anything that is not a claude.ai project link', () {
+      for (final raw in [
+        '',
+        '   ',
+        'https://example.com/project/abc123',
+        'https://claude.ai/new',
+        'https://claude.ai/chat/abc123',
+        'https://claude.ai/project',
+        'https://claude.ai/project/',
+        'not a url at all',
+      ]) {
+        expect(
+          parseClaudeProjectUrl(raw),
+          isNull,
+          reason: 'should refuse "$raw"',
+        );
+      }
+    });
+  });
+
   group('claudeUriFor', () {
     test('carries the prompt as a query parameter', () {
       final uri = claudeUriFor('Run the framework on NVDA');
@@ -63,6 +118,33 @@ void main() {
       // Worth opening Claude even with nothing to carry; the button copies
       // the prompt regardless.
       expect(claudeUriFor('').toString(), claudeNewChat);
+    });
+
+    test('targets the project when one is set', () {
+      final uri = claudeUriFor(
+        'Run the framework on NVDA',
+        projectUrl: Uri.https('claude.ai', '/project/abc123'),
+      );
+
+      expect(uri.path, '/project/abc123');
+      expect(uri.queryParameters['q'], 'Run the framework on NVDA');
+    });
+
+    test('falls back to a new chat when no project is set', () {
+      final uri = claudeUriFor('Run the framework on NVDA');
+
+      expect(uri.path, '/new');
+      expect(uri.queryParameters['q'], 'Run the framework on NVDA');
+    });
+
+    test('an empty prompt leaves a project link untouched', () {
+      expect(
+        claudeUriFor(
+          '',
+          projectUrl: Uri.https('claude.ai', '/project/abc123'),
+        ).toString(),
+        'https://claude.ai/project/abc123',
+      );
     });
   });
 }
