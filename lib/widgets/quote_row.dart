@@ -102,143 +102,198 @@ class QuoteRow extends StatelessWidget {
               border: Border.all(color: c.border),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Flexible(
-                            child: Text(
-                              symbol,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: c.text,
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0.2,
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  symbol,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: c.text,
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
                               ),
-                            ),
+                              if (hasAlert) ...[
+                                const SizedBox(width: 5),
+                                Icon(
+                                  Icons.notifications_active,
+                                  size: 13,
+                                  color: c.textFaint,
+                                ),
+                              ],
+                            ],
                           ),
-                          if (hasAlert) ...[
-                            const SizedBox(width: 5),
-                            Icon(
-                              Icons.notifications_active,
-                              size: 13,
-                              color: c.textFaint,
-                            ),
-                          ],
+                          const SizedBox(height: 2),
+                          Text(
+                            q?.name ?? error ?? 'Loading…',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(color: c.textMuted, fontSize: 13),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        q?.name ?? error ?? 'Loading…',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(color: c.textMuted, fontSize: 13),
+                    ),
+                    if (q != null) ...[
+                      const SizedBox(width: 10),
+                      Sparkline(
+                        points: q.spark,
+                        width: _sparkWidth,
+                        height: _sparkHeight,
+                        color: stale ? c.textFaint : color,
                       ),
-                      if (held != null) ...[
-                        const SizedBox(height: 3),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Flexible(
-                              child: Text(
-                                value == null
-                                    ? '${formatShares(held)} shares'
-                                    : '${formatShares(held)} shares · '
-                                          '${formatValue(value, q!.currency)}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: tabularFigures.copyWith(
-                                  color: c.textFaint,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ),
-                            // The return since purchase is coloured because it
-                            // is the number with a good and a bad direction;
-                            // the value beside it has neither.
-                            if (gain != null && gainPercent != null) ...[
-                              Text(
-                                ' · ',
-                                style: TextStyle(
-                                  color: c.textFaint,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              Text(
-                                formatPercent(gainPercent),
-                                maxLines: 1,
-                                style: tabularFigures.copyWith(
-                                  color: stale ? c.textFaint : c.trend(gain),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                      if (holding?.hasScores ?? false) ...[
-                        const SizedBox(height: 4),
-                        _Scores(holding: holding!),
-                      ],
-                    ],
-                  ),
-                ),
-                if (q != null) ...[
-                  const SizedBox(width: 10),
-                  Sparkline(
-                    points: q.spark,
-                    width: _sparkWidth,
-                    height: _sparkHeight,
-                    color: stale ? c.textFaint : color,
-                  ),
-                  const SizedBox(width: 10),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        formatPrice(q.price, q.currency),
-                        maxLines: 1,
-                        style: tabularFigures.copyWith(
-                          color: c.text,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Row(
+                      const SizedBox(width: 10),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            formatChange(q.change),
+                            formatPrice(q.price, q.currency),
                             maxLines: 1,
                             style: tabularFigures.copyWith(
-                              color: color,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
+                              color: c.text,
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          ChangePill(changePercent: q.changePercent),
+                          const SizedBox(height: 3),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                formatChange(q.change),
+                                maxLines: 1,
+                                style: tabularFigures.copyWith(
+                                  color: color,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              ChangePill(changePercent: q.changePercent),
+                            ],
+                          ),
                         ],
                       ),
                     ],
+                  ],
+                ),
+                // Below the row rather than beside the name. Squeezed into the
+                // left column these three figures shared about half the width
+                // with the symbol and company name, and ellipsised; the full
+                // width fits them at a readable size with air between them.
+                if (held != null || (holding?.hasScores ?? false)) ...[
+                  const SizedBox(height: 10),
+                  Container(height: 1, color: c.border),
+                  const SizedBox(height: 9),
+                ],
+                if (held != null)
+                  _PositionLine(
+                    shares: held,
+                    value: value,
+                    gain: gain,
+                    gainPercent: gainPercent,
+                    currency: q?.currency ?? 'USD',
+                    stale: stale,
                   ),
+                if (holding?.hasScores ?? false) ...[
+                  if (held != null) const SizedBox(height: 7),
+                  _Scores(holding: holding!),
                 ],
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The position tier of a portfolio row: how much is held, what it is worth,
+/// and the return on it.
+///
+/// Laid out as three columns rather than a dot-separated run of text so the
+/// figures line up down the list and can be compared between holdings.
+class _PositionLine extends StatelessWidget {
+  const _PositionLine({
+    required this.shares,
+    required this.value,
+    required this.gain,
+    required this.gainPercent,
+    required this.currency,
+    required this.stale,
+  });
+
+  final double shares;
+  final double? value;
+  final double? gain;
+  final double? gainPercent;
+  final String currency;
+  final bool stale;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final worth = value;
+    final percent = gainPercent;
+
+    return Row(
+      children: [
+        Expanded(
+          flex: 5,
+          child: Text(
+            '${formatShares(shares)} shares',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: tabularFigures.copyWith(color: c.textMuted, fontSize: 13),
+          ),
+        ),
+        Expanded(
+          flex: 5,
+          child: Text(
+            worth == null ? '—' : formatValue(worth, currency),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: tabularFigures.copyWith(
+              color: c.text,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 4,
+          child: Text(
+            // The return is the number with a good and a bad direction, so it
+            // is the one that carries colour; the value beside it has neither.
+            percent == null ? '' : formatPercent(percent),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.right,
+            style: tabularFigures.copyWith(
+              color: stale || gain == null ? c.textFaint : c.trend(gain!),
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -266,9 +321,8 @@ class _Scores extends StatelessWidget {
     ];
 
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        Flexible(
+        Expanded(
           child: Text(
             parts.join(' · '),
             maxLines: 1,
@@ -280,9 +334,10 @@ class _Scores extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 6),
+        const SizedBox(width: 10),
         Flexible(
           child: Text(
+            textAlign: TextAlign.right,
             // A date the sheet had but could not be read says so, rather than
             // leaving a score looking timeless.
             scoredAt == null
