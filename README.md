@@ -579,6 +579,20 @@ this needs no secrets, and equally why the APK it produces must not be
 distributed. A real signed build still comes from a machine that has the
 keystore.
 
+**It also installs as a separate app.** A release build without the keystore
+gets the application id `io.github.lepenguin22.ticker.ci` and the label
+**Portfolio Alerts CI**. Android refuses to replace an app signed with one key
+by a build signed with another, so without this a CI APK simply fails to
+install over the real app — the only remedy being to uninstall it and lose its
+data. As a separate id the two sit side by side, and the label keeps them
+apart on the home screen, since they share an icon.
+
+Being a separate app, it has **its own storage**: an empty watchlist, and no
+portfolio until the sheet is imported into it. That is the trade for not
+touching the real app. Only builds that find the keystore keep the plain
+`io.github.lepenguin22.ticker` id, so nothing about a proper signed release
+changes.
+
 The Flutter version is pinned so an upstream release cannot turn CI red on its
 own; bump it deliberately, with the suite run against the new version.
 

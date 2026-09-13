@@ -13,8 +13,9 @@ plugins {
 // still works without any setup. Only a build that finds this file produces an
 // artifact that is publishable.
 val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
 val keystoreProperties = Properties().apply {
-    if (keystorePropertiesFile.exists()) {
+    if (hasReleaseKeystore) {
         FileInputStream(keystorePropertiesFile).use { load(it) }
     }
 }
@@ -46,12 +47,16 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Carried into the manifest so a build that is not the real one can
+        // say so on the home screen.
+        manifestPlaceholders["appLabel"] = "Portfolio Alerts"
     }
 
     signingConfigs {
         // Declared only when the properties file is present: a half-populated
         // config would fail the build for anyone who just wants a debug APK.
-        if (keystorePropertiesFile.exists()) {
+        if (hasReleaseKeystore) {
             create("release") {
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
@@ -65,6 +70,20 @@ android {
         release {
             signingConfig =
                 signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+
+            // A release build without the keystore is signed with the debug
+            // key, and Android will not let it replace an app signed with the
+            // real one — installing over it fails outright. Giving it its own
+            // application id makes it a separate app instead, so a CI build
+            // can be installed alongside the real one for testing without
+            // uninstalling anything or losing its data.
+            //
+            // The label changes with it: two apps sharing an icon and a name
+            // would leave no way to tell which is which on the home screen.
+            if (!hasReleaseKeystore) {
+                applicationIdSuffix = ".ci"
+                manifestPlaceholders["appLabel"] = "Portfolio Alerts CI"
+            }
         }
     }
 }
