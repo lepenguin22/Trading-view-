@@ -10,6 +10,8 @@ const _sheetUrlKey = 'ticker.portfolio.sheetUrl.v1';
 const _portfolioKey = 'ticker.portfolio.symbols.v1';
 const _holdingsKey = 'ticker.portfolio.holdings.v1';
 const _quotesKey = 'ticker.watchlist.quotes.v1';
+const _claudeProjectKey = 'ticker.analysis.claudeProject.v1';
+const _calculatorKey = 'ticker.calculator.inputs.v1';
 
 /// Written by the removed fair-value feature. Purged on launch: the first is
 /// an API key, and leaving a credential in app storage with no screen left to
@@ -137,6 +139,60 @@ class WatchlistStorage {
       await (await _prefs).setString(_sheetUrlKey, url);
     } catch (_) {
       // Ignore: the import still worked, it just will not be remembered.
+    }
+  }
+
+  /// The Claude project an analysis should start in.
+  ///
+  /// Stored on the device rather than compiled in: it identifies one person's
+  /// project, and this repository is public.
+  Future<String?> loadClaudeProjectUrl() async {
+    try {
+      return (await _prefs).getString(_claudeProjectKey);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Saves the project URL, or forgets it when given nothing.
+  Future<void> saveClaudeProjectUrl(String url) async {
+    try {
+      final prefs = await _prefs;
+      if (url.trim().isEmpty) {
+        await prefs.remove(_claudeProjectKey);
+      } else {
+        await prefs.setString(_claudeProjectKey, url.trim());
+      }
+    } catch (_) {
+      // Ignore: analyses still start, just in a chat outside the project.
+    }
+  }
+
+  /// The calculator's last inputs, so a projection is not retyped.
+  ///
+  /// Salary and balances are personal, and like the rest of this app's data
+  /// they stay on the device — nothing here is sent anywhere.
+  Future<Map<String, double>> loadCalculatorInputs() async {
+    try {
+      final raw = (await _prefs).getString(_calculatorKey);
+      if (raw == null) return const {};
+      final parsed = jsonDecode(raw);
+      if (parsed is! Map) return const {};
+      return {
+        for (final entry in parsed.entries)
+          if (entry.key is String && entry.value is num)
+            entry.key as String: (entry.value as num).toDouble(),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<void> saveCalculatorInputs(Map<String, double> values) async {
+    try {
+      await (await _prefs).setString(_calculatorKey, jsonEncode(values));
+    } catch (_) {
+      // Ignore: the projection on screen is still correct.
     }
   }
 

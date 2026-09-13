@@ -276,6 +276,37 @@ the price feed is asked about symbols, never about sizes. A portfolio saved by
 an older build, before quantities existed, still loads; those holdings simply
 have no count until the sheet is imported again.
 
+## The calculator
+
+Under the overflow menu. It projects two pots forward month by month and
+charts them stacked: **CPF** underneath, because it happens out of salary
+whatever else is decided, and **investments** on top, because that is what the
+plan adds.
+
+Salary drives both. Gross less your CPF percentage gives take-home, and the
+projection says what is left after the monthly investment — if that goes
+negative it says so rather than quietly projecting money you do not have.
+
+**Nothing here encodes CPF policy.** Contribution percentages, the wage
+ceiling and the interest rate are all inputs, because every one of them has
+changed in recent years and a calculator quietly using a stale figure is worse
+than one that asks. Defaults lean conservative where a guess would flatter the
+result: CPF interest starts at the Ordinary Account's 2.5% rather than the 4%
+paid on Special and MediSave, and there is no pay rise unless you set one.
+
+The **wage ceiling is worth setting even if your salary is under it today**.
+Over twenty years a rising salary crosses it, and ignoring that overstates CPF
+for every year after. Leave it blank for no ceiling; zero means the same thing,
+not a ceiling of nothing.
+
+The result separates **what was paid in from what was earned**, which is the
+point of the exercise — a single final number would not say how much of it was
+growth.
+
+It is a projection, not a forecast: fixed rates compounded monthly, with
+contributions at month end. Inputs are saved on the device, and like everything
+else here they are sent nowhere.
+
 ## Starting an analysis
 
 Every stock's detail screen has **Run framework analysis**. It copies a prompt
@@ -288,6 +319,18 @@ answer instead of the structured deep dive. Nothing else is sent: position size
 would anchor the analysis to a holding already owned, and the chart's current
 technicals answer a question the framework asks for itself.
 
+**Set a project under Settings** and the button opens that project instead of a
+new chat, so an analysis starts where the framework and its history already
+are. Paste the project's address; a link copied from a chat inside the project
+resolves to the project itself, and anything that is not a claude.ai project
+link is refused rather than stored — sending the button somewhere arbitrary
+would be worse than falling back to a new chat.
+
+Claude has no documented way to open a new chat *already inside* a project, so
+the button lands on the project and the prompt is pasted from the clipboard.
+The prompt is attached to the link regardless, so if that ever starts being
+filled in automatically it will simply begin working.
+
 **The clipboard copy happens first, and it is the part that matters.** Whether
 a link can carry text into Claude is not something this project can guarantee —
 the behaviour has changed before, and the documentation is not reachable from
@@ -295,6 +338,9 @@ the environment this was written in. So the button never depends on it: if the
 link opens Claude with the prompt filled in, good; if it opens a blank chat, or
 nothing is installed to handle it, the prompt is already copied and the message
 says to paste it. The handoff works either way.
+
+The project link is stored on the device, never compiled in: it identifies one
+person's project and this repository is public.
 
 On Android the manifest declares an `https` intent query. Without it, from
 Android 11 on, an app cannot see which other apps handle web links and the
@@ -531,12 +577,14 @@ lib/background/
   alert_worker.dart      Background entry point, check routine and scheduling
 lib/notifications/
   notifications.dart     Local notification channel, permission and posting
-lib/screens/             Watchlist, Search, Detail, Alerts, Import
+lib/screens/             Watchlist, Search, Detail, Alerts, Import, Settings,
+                         Calculator
 lib/widgets/             QuoteRow, PriceChart, RsiPane, Sparkline, ChangePill,
                          AlertSheet, PortfolioSummary
 lib/utils/
   format.dart            Price, change and date formatting
   chart.dart             Line and candle geometry, zoom limits (unit tested)
+  projection.dart        Compound growth of savings and CPF (unit tested)
   indicators.dart        Moving averages, Wilder RSI, crossings (unit tested)
   portfolio_csv.dart     Holdings, counts, costs and scores from CSV (tested)
 lib/theme/app_theme.dart Palette, carried on ThemeData as an extension

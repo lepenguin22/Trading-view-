@@ -29,9 +29,45 @@ String analysisPromptFor(String symbol) {
   return 'Run the framework on $ticker';
 }
 
-/// A link to Claude carrying [prompt], or the bare new-chat URL when there is
-/// nothing to carry.
-Uri claudeUriFor(String prompt) {
-  if (prompt.isEmpty) return Uri.parse(claudeNewChat);
-  return Uri.parse(claudeNewChat).replace(queryParameters: {'q': prompt});
+/// Normalises a pasted Claude project link, or returns null if it is not one.
+///
+/// Accepts what a user actually copies out of the address bar — extra query
+/// parameters, a trailing slash, a chat opened inside the project. Anything
+/// that is not a claude.ai project link is refused rather than opened: sending
+/// the button somewhere arbitrary would be worse than falling back to a new
+/// chat.
+Uri? parseClaudeProjectUrl(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+
+  final uri = Uri.tryParse(text.startsWith('http') ? text : 'https://$text');
+  if (uri == null) return null;
+  if (uri.host != 'claude.ai' && uri.host != 'www.claude.ai') return null;
+
+  final segments = [
+    for (final s in uri.pathSegments)
+      if (s.isNotEmpty) s,
+  ];
+  final index = segments.indexOf('project');
+  if (index == -1 || index + 1 >= segments.length) return null;
+
+  final id = segments[index + 1];
+  if (id.isEmpty) return null;
+
+  // Rebuilt rather than passed through, so a link copied from a chat inside
+  // the project still points at the project itself.
+  return Uri.https('claude.ai', '/project/$id');
+}
+
+/// A link to Claude carrying [prompt].
+///
+/// Targets [projectUrl] when one is set, so an analysis starts where the
+/// framework and its history already live. The prompt is attached as a query
+/// parameter either way: it fills the composer where that is supported, and is
+/// harmlessly ignored where it is not — the button copies the prompt to the
+/// clipboard first, which is what actually guarantees the handoff.
+Uri claudeUriFor(String prompt, {Uri? projectUrl}) {
+  final base = projectUrl ?? Uri.parse(claudeNewChat);
+  if (prompt.isEmpty) return base;
+  return base.replace(queryParameters: {'q': prompt});
 }
