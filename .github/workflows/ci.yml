@@ -78,12 +78,52 @@ jobs:
         # — and for the same reason the artifact is NOT for distribution.
         run: flutter build apk --release
 
+      # Prints what the APK actually declares, rather than what the Gradle
+      # config is believed to produce. An install failure on a device gives
+      # almost no diagnostic, so the package name, version and signing
+      # certificate are recorded here for every build.
+      - name: Inspect the APK
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "Using $tools"
+
+          "$tools/aapt2" dump badging "$apk" \
+            | grep -E "^(package|minSdkVersion|sdkVersion|targetSdkVersion|native-code)" \
+            | tee /tmp/badging.txt
+
+          # Unfiltered on purpose. Which key signed the APK decides whether a
+          # phone that already has the previous build will accept this one, and
+          # a wrong answer shows up only as "App not installed" with nothing
+          # else — so the whole certificate goes in the log.
+          "$tools/apksigner" verify --print-certs -v "$apk" | tee /tmp/signing.txt
+
+          # The keystore-less build must carry its own application id, or it
+          # collides with a real signed install and Android refuses it.
+          if ! grep -q "name='io.github.lepenguin22.ticker.ci'" /tmp/badging.txt
+          then
+            echo "::error::APK package id is not the expected .ci variant"
+            exit 1
+          fi
+
+          # And it must carry the committed CI certificate. A build that fell
+          # back to Android's debug key would be signed by a different
+          # certificate on every runner, and a phone that already has the last
+          # build would refuse this one with nothing but "App not installed".
+          expected=0d2a1aea4f1a856e15f50e0cc0810a4351e6b5908426498e17e56992bd9db48d
+          if ! grep -qi "certificate SHA-256 digest: $expected" /tmp/signing.txt
+          then
+            echo "::error::APK is not signed with the committed CI key"
+            exit 1
+          fi
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          # Named for what it is: debug-signed, so it installs for testing but
-          # is not a store build.
-          name: app-release-debugsigned-apk
+          # Named for what it is: signed with the public CI key, so it
+          # installs for testing but is not a store build.
+          name: app-release-ci-signed-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14

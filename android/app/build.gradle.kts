@@ -64,18 +64,36 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword")
             }
         }
+
+        // The stand-in used when there is no real keystore. It exists because
+        // the alternative — Android's debug key — is generated per machine, and
+        // every CI runner is a fresh container: each build came out signed by a
+        // different certificate, and a phone will not install a build over one
+        // signed by a different key. The symptom is a bare "App not installed".
+        // Committing this key makes consecutive CI builds upgrades of each
+        // other.
+        //
+        // It is public on purpose and protects nothing. It signs only the ".ci"
+        // application id, which is not the real app, and nothing it signs may
+        // be published. See README, "The one committed key".
+        create("ci") {
+            keyAlias = "ci"
+            keyPassword = "ciapkci"
+            storeFile = rootProject.file("ci-signing/ci.keystore")
+            storePassword = "ciapkci"
+        }
     }
 
     buildTypes {
         release {
             signingConfig =
-                signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
+                signingConfigs.findByName("release") ?: signingConfigs.getByName("ci")
 
-            // A release build without the keystore is signed with the debug
-            // key, and Android will not let it replace an app signed with the
-            // real one — installing over it fails outright. Giving it its own
-            // application id makes it a separate app instead, so a CI build
-            // can be installed alongside the real one for testing without
+            // A release build without the keystore is not signed with the real
+            // key, and Android will not let it replace an app that is —
+            // installing over it fails outright. Giving it its own application
+            // id makes it a separate app instead, so a CI build can be
+            // installed alongside the real one for testing without
             // uninstalling anything or losing its data.
             //
             // The label changes with it: two apps sharing an icon and a name

@@ -12,3 +12,9 @@ GeneratedPluginRegistrant.java
 key.properties
 **/*.keystore
 **/*.jks
+
+# The one exception: a throwaway key that signs the ".ci" build only.
+# It is public on purpose so that consecutive CI builds share a
+# certificate and can install over one another. It is not the real key,
+# and nothing it signs may be published.
+!ci-signing/ci.keystore
