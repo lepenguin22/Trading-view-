@@ -78,6 +78,32 @@ jobs:
         # — and for the same reason the artifact is NOT for distribution.
         run: flutter build apk --release
 
+      # Prints what the APK actually declares, rather than what the Gradle
+      # config is believed to produce. An install failure on a device gives
+      # almost no diagnostic, so the package name, version and signing
+      # certificate are recorded here for every build.
+      - name: Inspect the APK
+        run: |
+          set -euo pipefail
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          echo "Using $tools"
+
+          "$tools/aapt2" dump badging "$apk" \
+            | grep -E "^(package|sdkVersion|targetSdkVersion|native-code)" \
+            | tee /tmp/badging.txt
+
+          "$tools/apksigner" verify --print-certs -v "$apk" \
+            | grep -E "Verified using|Signer #1 certificate DN" || true
+
+          # The keystore-less build must carry its own application id, or it
+          # collides with a real signed install and Android refuses it.
+          if ! grep -q "name='io.github.lepenguin22.ticker.ci'" /tmp/badging.txt
+          then
+            echo "::error::APK package id is not the expected .ci variant"
+            exit 1
+          fi
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
