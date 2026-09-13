@@ -504,7 +504,7 @@ both, rather than re-cutting a dozen PNGs by hand.
 
 The app's identity is `io.github.lepenguin22.ticker` on both platforms.
 
-Debug and profile builds need no setup. A release build signs with the debug
+Debug and profile builds need no setup. A release build signs with a stand-in
 key unless you supply a keystore, so `flutter run --release` works on a fresh
 clone — but an APK signed that way cannot be published.
 
@@ -527,6 +527,26 @@ flutter build appbundle  # build/app/outputs/bundle/release/app-release.aab
 `key.properties` and any `*.jks` / `*.keystore` file are gitignored. Keep the
 keystore outside the repository and back it up: losing it means you can never
 ship an update to an app already on the Play Store, and there is no recovery.
+
+### The one committed key
+
+`android/ci-signing/ci.keystore` is checked in, and its password sits in
+`android/app/build.gradle.kts` in plain sight. That is deliberate. It is not
+the app's key and it never signs `io.github.lepenguin22.ticker` — only the
+`.ci` build described under Continuous integration.
+
+It exists because the obvious stand-in, Android's debug key, is generated per
+machine. Every CI run is a fresh container, so every build came out signed by a
+different certificate, and a phone will not install a build over one signed by
+a different key. The symptom was a bare "App not installed" on an APK that had
+built cleanly, with nothing in the build log to explain it. A committed key
+makes consecutive CI builds upgrades of each other.
+
+The cost of publishing it is that anyone can build an APK claiming the `.ci`
+identity, so treat a `.ci` build like any other sideloaded file: install one
+only if it came from this repository's own CI run. To remove even that, move
+the keystore into an Actions secret and have the workflow write it out before
+building; nothing else needs to change.
 
 ## Price data
 
@@ -622,10 +642,15 @@ where builds actually break — minification and icon tree shaking do not run in
 debug — and the result is installable for testing on a device.
 
 **That artifact is not a store build.** `android/app/build.gradle.kts` falls
-back to the debug key when `android/key.properties` is absent, which is why
-this needs no secrets, and equally why the APK it produces must not be
-distributed. A real signed build still comes from a machine that has the
-keystore.
+back to the committed CI key when `android/key.properties` is absent, which is
+why this needs no secrets, and equally why the APK it produces must not be
+distributed — that key is public. A real signed build still comes from a
+machine that has the keystore.
+
+The job then checks its own output: it reads the finished APK and fails if the
+package id is not the `.ci` variant, or if the signing certificate is not the
+committed one. Both are invisible in the build log, and both, when wrong,
+reach you only as an unexplained "App not installed".
 
 **It also installs as a separate app.** A release build without the keystore
 gets the application id `io.github.lepenguin22.ticker.ci` and the label
