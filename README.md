@@ -377,7 +377,7 @@ launch silently reports failure.
 If your sheet carries score columns, each holding shows them under its value:
 
 ```
-Fin 14/19 · Moat 11/14        scored 3 weeks ago
+Fin 12/17 · Moat 8/14         scored 3 weeks ago
 ```
 
 The columns are found the same way as quantity and cost — in the tickers'
@@ -385,11 +385,23 @@ header row, matched on the leading word, and never a column another kind has
 already claimed. `Financial score`, `Financials`, `Fin score`, `Moat score`,
 `Moat` and `Scored` all work.
 
-**The app records these; it does not compute them.** The 19 financial criteria
-need multi-year statements and peer benchmarking, and several of the 14 moat
+**The app records these; it does not compute them.** The financial criteria
+need multi-year statements and peer benchmarking, and several of the moat
 criteria are outright qualitative — whether a brand commands premium pricing is
 not something a price feed can answer. The judgement is made elsewhere and the
 sheet is where it is written down.
+
+**Each score carries the scale it was marked on, because the scale varies.**
+The framework scores financials out of 19, but criteria that do not apply to a
+company are dropped rather than scored zero — an ETF has no management to
+assess, a young company no long record — so one holding is marked out of 17 and
+the next out of 18. Whatever the sheet writes is what is shown. A bare number
+with no scale beside it is read against the framework's own, which is the only
+thing it can mean.
+
+Nothing is rescaled to a common denominator. 12/17 is not 12/19, and converting
+between them would invent a judgement nobody made — so comparing two scores on
+different scales is left to the reader, who knows which criteria were dropped.
 
 **A score always carries its age**, because it is a snapshot. One from six
 months ago may predate two earnings reports, and a stale judgement shown as
@@ -400,10 +412,11 @@ number rather than an old one.
 
 **Two things are refused rather than guessed:**
 
-- A score outside its scale. A 25 against 19 is a slip, and displaying it would
-  lend a wrong number the authority of a score. A written `14/19` is accepted,
-  but `11/19` in the moat column is refused — the denominator disagrees, so
-  that cell is not a moat score.
+- A mark larger than its own scale. A `20/17` is a slip, and displaying it
+  would lend a wrong number the authority of a score. So is a scale of zero, or
+  one large enough to be a year rather than a checklist. A `-`, the way a sheet
+  says "not assessed", leaves the holding with no score rather than a zero —
+  which would read as the worst possible judgement.
 - An ambiguous date. `2026-08-15` and `15/08/2026` are read; **`03/04/2026` is
   not**, because it is March 4th to half the world and April 3rd to the other
   half. Since this date drives the staleness label, being a month wrong would

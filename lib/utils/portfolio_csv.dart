@@ -1,6 +1,7 @@
 import 'package:csv/csv.dart';
 
 import '../models/holding.dart';
+import '../models/score.dart';
 
 /// Reads the holdings table out of a spreadsheet exported as CSV.
 ///
@@ -79,8 +80,13 @@ const _moatScoreLeadingWords = {'moat', 'economic'};
 const _scoredHeaders = {'scored', 'score date', 'date scored', 'reviewed'};
 const _scoredLeadingWords = {'scored', 'analysed', 'analyzed', 'reviewed'};
 
-/// The scales the framework scores on. A value outside these is a data-entry
-/// slip, not a score, and is refused rather than displayed.
+/// The scales the framework scores on, used only when a cell gives a bare
+/// number and the sheet has not said what it was out of.
+///
+/// Not a rule the sheet must obey. Criteria that do not apply to a company are
+/// dropped from its checklist rather than scored zero, so the denominator
+/// genuinely varies — 12/17 beside 15/18 — and whatever the sheet writes is
+/// what the app carries.
 const financialScoreMax = 19;
 const moatScoreMax = 14;
 
@@ -248,25 +254,26 @@ String _normaliseHeader(String raw) =>
 /// have both. Anything outside 0..[max] is refused: a 25 against a scale of 19
 /// is a slip, and showing it would lend a wrong number the authority of a
 /// score.
-int? parseScore(String raw, int max) {
+Score? parseScore(String raw, int defaultOutOf) {
   final text = raw.trim();
   if (text.isEmpty) return null;
 
-  // "14 / 19" — take the numerator; the denominator is the scale we already
-  // know. A denominator that disagrees means the cell is not this scale's
-  // score, so the whole cell is refused rather than half-read.
-  final fraction = RegExp(r'^(-?\d+)\s*/\s*(\d+)$').firstMatch(text);
+  // "14 / 19" — the sheet states its own scale, and it is taken as written.
+  // The framework scores financials out of 19, but not every criterion
+  // applies to every company, so a real sheet holds 12/17 beside 15/18.
+  // Insisting on one denominator made every such cell unreadable.
+  final fraction = RegExp(r'^(-?\d+)\s*/\s*(-?\d+)$').firstMatch(text);
   if (fraction != null) {
-    if (int.tryParse(fraction.group(2)!) != max) return null;
-    return _scoreWithin(int.tryParse(fraction.group(1)!), max);
+    final value = int.tryParse(fraction.group(1)!);
+    final outOf = int.tryParse(fraction.group(2)!);
+    if (value == null || outOf == null) return null;
+    return Score.of(value, outOf);
   }
 
-  return _scoreWithin(int.tryParse(text), max);
-}
-
-int? _scoreWithin(int? value, int max) {
-  if (value == null || value < 0 || value > max) return null;
-  return value;
+  // A bare number is read against the framework's own scale, which is the
+  // only thing it can mean when the sheet does not say.
+  final value = int.tryParse(text);
+  return value == null ? null : Score.of(value, defaultOutOf);
 }
 
 /// Reads the date a score was arrived at.

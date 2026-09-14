@@ -2,11 +2,11 @@
 ,Columns to modify: Column B (Stock ticker symbol)  Column D (avg price bought)  Column E (how many shares bought),,,,,,,
 ,,,,,,,,
 No.,Ticker,Name,Average price bought  (US),Shares bought,Principal invested (USD),Current Stock Price,% Gain or Loss,Portfolio Weightage,Financial score,Moat score,Scored
-1,AAA,Alpha Industries Inc,"100.00",10,"1,000.00",$110.00,10.00%,25.00%,14,11,2026-08-15
-2,BBB,Beta Technologies Inc,"200.00",5,"1,000.00",$180.00,-10.00%,25.00%,9,6,2026-07-02
-3,ccc,Gamma Holdings NV,"50.00",20,"1,000.00",$75.00,50.00%,25.00%,16,12,2026-08-20
-4,DDD.L,Delta Group PLC,"25.00",40,"1,000.00",$25.00,0.00%,12.50%,11,8,
-5,BRK-B,Epsilon Corp Class B,"10.00",100,"1,000.00",$12.00,20.00%,12.50%,7,5,2025-11-30
+1,AAA,Alpha Industries Inc,"100.00",10,"1,000.00",$110.00,10.00%,25.00%,14/19,11/14,2026-08-15
+2,BBB,Beta Technologies Inc,"200.00",5,"1,000.00",$180.00,-10.00%,25.00%,9/17,6/14,2026-07-02
+3,ccc,Gamma Holdings NV,"50.00",20,"1,000.00",$75.00,50.00%,25.00%,16/18,12/14,2026-08-20
+4,DDD.L,Delta Group PLC,"25.00",40,"1,000.00",$25.00,0.00%,12.50%,11/17,8/14,
+5,BRK-B,Epsilon Corp Class B,"10.00",100,"1,000.00",$12.00,20.00%,12.50%,-,,2025-11-30
 ,,,,,,,,
 ,Overview,,,,,,,
 ,Total invested (USD),Current balance (USD),Total Gain or Loss ($),Total Gain or Loss (%),,,,
