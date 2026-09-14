@@ -1185,6 +1185,35 @@ void main() {
     await teardown(tester);
   });
 
+  testWidgets('a holding shows the scale its scores were marked on', (
+    tester,
+  ) async {
+    // The framework drops criteria that do not apply, so a real sheet holds
+    // 12/17 beside 15/18. Printing a fixed /19 would misstate both.
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"UNH","shares":16,'
+          '"financialScore":{"value":12,"outOf":17},'
+          '"moatScore":{"value":8,"outOf":14}},'
+          '{"symbol":"PLTR","shares":19,'
+          '"financialScore":{"value":15,"outOf":18},'
+          '"moatScore":{"value":6,"outOf":14}}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Portfolio (2)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fin 12/17 · Moat 8/14'), findsOneWidget);
+    expect(find.text('Fin 15/18 · Moat 6/14'), findsOneWidget);
+    expect(find.textContaining('/19'), findsNothing);
+
+    await teardown(tester);
+  });
+
   testWidgets('a holding shows its checklist scores and their age', (
     tester,
   ) async {

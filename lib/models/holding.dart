@@ -1,4 +1,5 @@
 import '../utils/portfolio_csv.dart' show financialScoreMax, moatScoreMax;
+import 'score.dart';
 
 /// One line of the portfolio: a symbol and, when the sheet says so, how many
 /// shares are held.
@@ -30,16 +31,17 @@ class Holding {
   /// factor of the share count.
   final double? costPerShare;
 
-  /// Checklist score out of 19 from the analysis framework, when the sheet
-  /// carries one.
+  /// Financial checklist score from the analysis framework, when the sheet
+  /// carries one — with the scale it was marked out of, since criteria that do
+  /// not apply to a company are dropped rather than scored zero.
   ///
   /// Recorded, never computed: the criteria need multi-year statements and
   /// peer benchmarking that no price feed provides, and several are outright
   /// qualitative. The app's job is to carry a judgement already made.
-  final int? financialScore;
+  final Score? financialScore;
 
-  /// Moat score out of 14, on the same terms.
-  final int? moatScore;
+  /// Moat score, on the same terms.
+  final Score? moatScore;
 
   /// When those scores were arrived at.
   ///
@@ -78,8 +80,8 @@ class Holding {
     String? symbol,
     double? shares,
     double? costPerShare,
-    int? financialScore,
-    int? moatScore,
+    Score? financialScore,
+    Score? moatScore,
     DateTime? scoredAt,
   }) => Holding(
     symbol: symbol ?? this.symbol,
@@ -94,8 +96,8 @@ class Holding {
     'symbol': symbol,
     if (shares != null) 'shares': shares,
     if (costPerShare != null) 'costPerShare': costPerShare,
-    if (financialScore != null) 'financialScore': financialScore,
-    if (moatScore != null) 'moatScore': moatScore,
+    if (financialScore != null) 'financialScore': financialScore!.toJson(),
+    if (moatScore != null) 'moatScore': moatScore!.toJson(),
     if (scoredAt != null) 'scoredAt': scoredAt!.millisecondsSinceEpoch,
   };
 
@@ -112,21 +114,15 @@ class Holding {
       costPerShare: cost is num && cost.isFinite && cost > 0
           ? cost.toDouble()
           : null,
-      // Bounds are re-checked on load, not just on parse: stored data can come
-      // from an older build whose scale differed.
-      financialScore: _storedScore(raw['financialScore'], financialScoreMax),
-      moatScore: _storedScore(raw['moatScore'], moatScoreMax),
+      // Bounds are re-checked on load, not just on parse, and a bare number
+      // written by a build from before scales were carried still reads —
+      // against the framework's scale, which is what that build assumed.
+      financialScore: Score.fromJson(raw['financialScore'], financialScoreMax),
+      moatScore: Score.fromJson(raw['moatScore'], moatScoreMax),
       scoredAt: scoredAt is num && scoredAt > 0
           ? DateTime.fromMillisecondsSinceEpoch(scoredAt.toInt())
           : null,
     );
-  }
-
-  static int? _storedScore(Object? raw, int max) {
-    if (raw is! num) return null;
-    final value = raw.toInt();
-    if (value < 0 || value > max) return null;
-    return value;
   }
 
   @override

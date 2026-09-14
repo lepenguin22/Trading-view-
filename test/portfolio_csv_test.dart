@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ticker/models/score.dart';
 import 'package:ticker/utils/portfolio_csv.dart';
 
 /// The parser returns holdings; most of these tests are about which tickers
@@ -257,36 +258,60 @@ void main() {
           'AAPL,10,14,11,2026-08-15\n';
       final holding = parseHoldingsCsv(csv).single;
 
-      expect(holding.financialScore, 14);
-      expect(holding.moatScore, 11);
+      // Bare numbers, so the framework's own scales apply.
+      expect(holding.financialScore, const Score(14, 19));
+      expect(holding.moatScore, const Score(11, 14));
       expect(holding.scoredAt, DateTime(2026, 8, 15));
       expect(holding.hasScores, isTrue);
     });
 
-    test('accepts a written fraction as well as a bare number', () {
-      const csv = 'Ticker,Financial score,Moat score\nAAPL,14/19,11 / 14\n';
-      final holding = parseHoldingsCsv(csv).single;
+    test('takes the scale the sheet states, not the framework default', () {
+      // The framework drops criteria that do not apply to a company, so real
+      // sheets hold 12/17 beside 15/18. Insisting on /19 made every one of
+      // them unreadable.
+      const csv =
+          'Ticker,Financial score,Moat score\n'
+          'UNH,12/17,8/14\n'
+          'PLTR,15/18,6/14\n'
+          'ISRG,14/16,10 / 14\n';
+      final holdings = parseHoldingsCsv(csv);
 
-      expect(holding.financialScore, 14);
-      expect(holding.moatScore, 11);
+      expect(holdings[0].financialScore, const Score(12, 17));
+      expect(holdings[1].financialScore, const Score(15, 18));
+      expect(holdings[2].financialScore, const Score(14, 16));
+      expect(holdings[2].moatScore, const Score(10, 14));
     });
 
-    test('refuses a fraction whose denominator is the wrong scale', () {
-      // "11/19" in the moat column is not a moat score; half-reading it as 11
-      // would silently rescale someone's judgement.
-      expect(parseScore('11/19', moatScoreMax), isNull);
-      expect(parseScore('14/14', financialScoreMax), isNull);
+    test('a score keeps its own scale rather than being rescaled', () {
+      // 12/17 is not 12/19. Normalising to a common denominator would invent
+      // a judgement nobody made.
+      final score = parseScore('12/17', financialScoreMax)!;
+
+      expect(score.value, 12);
+      expect(score.outOf, 17);
+      expect(score.toString(), '12/17');
     });
 
-    test('refuses a score outside its scale', () {
-      // A 25 against a scale of 19 is a slip, not a score.
+    test('refuses a mark larger than its own scale', () {
+      // A 20 out of 17 is a slip, not a score.
+      expect(parseScore('20/17', financialScoreMax), isNull);
+      expect(parseScore('-1/17', financialScoreMax), isNull);
+      expect(parseScore('5/0', financialScoreMax), isNull);
+      expect(parseScore('5/-3', financialScoreMax), isNull);
+      // A denominator this large is a year or a price, not a checklist.
+      expect(parseScore('5/2026', financialScoreMax), isNull);
+      // The bounds themselves are valid.
+      expect(parseScore('0/17', financialScoreMax), const Score(0, 17));
+      expect(parseScore('17/17', financialScoreMax), const Score(17, 17));
+    });
+
+    test('a bare number is read against the framework scale', () {
       expect(parseScore('25', financialScoreMax), isNull);
       expect(parseScore('-1', financialScoreMax), isNull);
       expect(parseScore('15', moatScoreMax), isNull);
-      // The bounds themselves are valid.
-      expect(parseScore('0', financialScoreMax), 0);
-      expect(parseScore('19', financialScoreMax), 19);
-      expect(parseScore('14', moatScoreMax), 14);
+      expect(parseScore('0', financialScoreMax), const Score(0, 19));
+      expect(parseScore('19', financialScoreMax), const Score(19, 19));
+      expect(parseScore('14', moatScoreMax), const Score(14, 14));
     });
 
     test('refuses anything that is not a whole score', () {
@@ -294,6 +319,8 @@ void main() {
       expect(parseScore('n/a', financialScoreMax), isNull);
       expect(parseScore('good', financialScoreMax), isNull);
       expect(parseScore('12.5', financialScoreMax), isNull);
+      // The dash a sheet uses for a holding it never scored.
+      expect(parseScore('-', financialScoreMax), isNull);
     });
 
     test('a sheet without score columns still imports', () {
@@ -315,14 +342,14 @@ void main() {
       ]) {
         expect(
           parseHoldingsCsv('Ticker,$header\nAAPL,14\n').single.financialScore,
-          14,
+          const Score(14, 19),
           reason: '"$header" should mark the financial score column',
         );
       }
       for (final header in ['Moat score', 'Moat', 'Economic moat']) {
         expect(
           parseHoldingsCsv('Ticker,$header\nAAPL,11\n').single.moatScore,
-          11,
+          const Score(11, 14),
           reason: '"$header" should mark the moat score column',
         );
       }
@@ -338,8 +365,8 @@ void main() {
 
       expect(holding.shares, 10);
       expect(holding.costPerShare, 50);
-      expect(holding.financialScore, 14);
-      expect(holding.moatScore, 11);
+      expect(holding.financialScore, const Score(14, 19));
+      expect(holding.moatScore, const Score(11, 14));
     });
   });
 
@@ -347,10 +374,16 @@ void main() {
     test('reads the score columns appended to the holdings table', () {
       final byTicker = {for (final h in parseHoldingsCsv(sheet)) h.symbol: h};
 
-      expect(byTicker['AAA']!.financialScore, 14);
-      expect(byTicker['AAA']!.moatScore, 11);
+      expect(byTicker['AAA']!.financialScore, const Score(14, 19));
+      expect(byTicker['AAA']!.moatScore, const Score(11, 14));
       expect(byTicker['AAA']!.scoredAt, DateTime(2026, 8, 15));
-      expect(byTicker['BRK-B']!.financialScore, 7);
+
+      // Each row keeps the scale it was marked on.
+      expect(byTicker['BBB']!.financialScore, const Score(9, 17));
+      expect(
+        byTicker['ccc'.toUpperCase()]!.financialScore,
+        const Score(16, 18),
+      );
     });
 
     test('a holding scored but undated keeps its scores', () {
@@ -359,9 +392,43 @@ void main() {
       final ddd = parseHoldingsCsv(sheet)
           .firstWhere((h) => h.symbol == 'DDD.L');
 
-      expect(ddd.financialScore, 11);
-      expect(ddd.moatScore, 8);
+      expect(ddd.financialScore, const Score(11, 17));
+      expect(ddd.moatScore, const Score(8, 14));
       expect(ddd.scoredAt, isNull);
+    });
+
+    test('a holding the sheet never scored carries no score', () {
+      // A dash in the score column is how a sheet says "not assessed". It is
+      // not a zero, which would read as the worst possible judgement.
+      final brk = parseHoldingsCsv(sheet)
+          .firstWhere((h) => h.symbol == 'BRK-B');
+
+      expect(brk.financialScore, isNull);
+      expect(brk.moatScore, isNull);
+      expect(brk.hasScores, isFalse);
+      // Its quantity and cost are untouched by having no score.
+      expect(brk.shares, 100);
+      expect(brk.costPerShare, 10);
+    });
+
+    test('scores import from a sheet with no date column at all', () {
+      // The columns as a real sheet appends them: scores at the end of the
+      // holdings table, and no "Scored" column beside them.
+      const csv =
+          'No.,Ticker,Name,Average price bought  (US),Shares bought,'
+          'Principal invested (USD),Current Stock Price,% Gain or Loss,'
+          'Portfolio Weightage,Financial score ,Moat score \n'
+          '1,AAA,Alpha Industries Inc,100.00,16,"1,600.00",\$110.00,10.00%,'
+          '25.00%,12/17,8/14\n';
+      final holding = parseHoldingsCsv(csv).single;
+
+      expect(holding.symbol, 'AAA');
+      expect(holding.shares, 16);
+      expect(holding.costPerShare, 100);
+      expect(holding.financialScore, const Score(12, 17));
+      expect(holding.moatScore, const Score(8, 14));
+      // No column for it, so nothing is claimed about when it was scored.
+      expect(holding.scoredAt, isNull);
     });
 
     test('the score columns do not disturb quantity or cost', () {

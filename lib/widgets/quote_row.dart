@@ -4,7 +4,6 @@ import '../models/holding.dart';
 import '../models/types.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
-import '../utils/portfolio_csv.dart' show financialScoreMax, moatScoreMax;
 import 'change_pill.dart';
 import 'sparkline.dart';
 
@@ -314,10 +313,13 @@ class _Scores extends StatelessWidget {
     final scoredAt = holding.scoredAt;
     final stale = scoredAt != null && isScoreStale(scoredAt);
 
+    // Each score carries its own scale, so both halves come from the sheet.
+    // The framework drops criteria that do not apply to a company, so one
+    // holding is marked out of 17 and the next out of 18 — printing a fixed
+    // denominator would misstate both.
     final parts = <String>[
-      if (holding.financialScore != null)
-        'Fin ${holding.financialScore}/$financialScoreMax',
-      if (holding.moatScore != null) 'Moat ${holding.moatScore}/$moatScoreMax',
+      if (holding.financialScore != null) 'Fin ${holding.financialScore}',
+      if (holding.moatScore != null) 'Moat ${holding.moatScore}',
     ];
 
     return Row(
