@@ -342,10 +342,20 @@ resolves to the project itself, and anything that is not a claude.ai project
 link is refused rather than stored — sending the button somewhere arbitrary
 would be worse than falling back to a new chat.
 
+**Without a project set, the button asks first.** It used to fall back silently
+to a bare chat, which from the phone is indistinguishable from a broken link —
+the analysis simply opened somewhere outside the project, with none of the past
+ones to refer to. Now it says so and offers to take you to Settings, with
+"Open anyway" still there for when a plain chat is what you want.
+
 Claude has no documented way to open a new chat *already inside* a project, so
 the button lands on the project and the prompt is pasted from the clipboard.
-The prompt is attached to the link regardless, so if that ever starts being
-filled in automatically it will simply begin working.
+
+**The prompt is not attached to a project link**, only to the new-chat one.
+`?q=` is the parameter the new-chat route reads; a project page has no composer
+for it to fill, and carrying it risks being routed to a bare chat — precisely
+the outcome a project link exists to avoid. The clipboard carries the prompt
+either way, and always did.
 
 **The clipboard copy happens first, and it is the part that matters.** Whether
 a link can carry text into Claude is not something this project can guarantee —

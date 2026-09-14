@@ -65,6 +65,44 @@ void main() {
     });
   }
 
+  /// Captures the URLs the app asks the platform to open.
+  ///
+  /// `url_launcher` has no Dart-side fake, and left unmocked its future never
+  /// completes under test, so the tap appears to do nothing.
+  List<String> mockLauncher(WidgetTester tester) {
+    final launched = <String>[];
+    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async => null,
+    );
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(launcher, (
+      call,
+    ) async {
+      final url = (call.arguments as Map)['url'];
+      if (url is String) launched.add(url);
+      return true;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+        ..setMockMethodCallHandler(SystemChannels.platform, null)
+        ..setMockMethodCallHandler(launcher, null);
+    });
+    return launched;
+  }
+
+  /// Taps the detail screen's analysis button.
+  Future<void> tapAnalysis(WidgetTester tester) async {
+    final button = find.widgetWithText(
+      OutlinedButton,
+      'Run framework analysis',
+    );
+    await tester.ensureVisible(button);
+    await tester.pumpAndSettle();
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+  }
+
   /// Whether [text] appears inside the list row for [symbol].
   ///
   /// Scoped to the row on purpose. The portfolio total above the list carries
@@ -299,13 +337,13 @@ void main() {
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
 
-    final button = find.widgetWithText(
-      OutlinedButton,
-      'Run framework analysis',
-    );
-    await tester.ensureVisible(button);
-    await tester.pumpAndSettle();
-    await tester.tap(button);
+    await tapAnalysis(tester);
+
+    // The prompt is on the clipboard before the project question is answered,
+    // so it is there however that goes.
+    expect(clipboard, ['Run the framework on AAPL']);
+
+    await tester.tap(find.text('Open anyway'));
     await tester.pumpAndSettle();
 
     expect(clipboard, ['Run the framework on AAPL']);
@@ -318,47 +356,51 @@ void main() {
   testWidgets('the analysis button opens Claude carrying the prompt', (
     tester,
   ) async {
-    final launched = <String>[];
-    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async => null,
-    );
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(launcher, (
-      call,
-    ) async {
-      final url = (call.arguments as Map)['url'];
-      if (url is String) launched.add(url);
-      return true;
-    });
-    addTearDown(() {
-      tester.binding.defaultBinaryMessenger
-        ..setMockMethodCallHandler(SystemChannels.platform, null)
-        ..setMockMethodCallHandler(launcher, null);
-    });
+    final launched = mockLauncher(tester);
 
     await tester.pumpWidget(appWith(respondingWith(chart1d)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
+    await tapAnalysis(tester);
 
-    final button = find.widgetWithText(
-      OutlinedButton,
-      'Run framework analysis',
-    );
-    await tester.ensureVisible(button);
-    await tester.pumpAndSettle();
-    await tester.tap(button);
+    // No project is configured, so the app says where this is about to go
+    // rather than opening a bare chat behind the user's back.
+    expect(find.text('No Claude project set'), findsOneWidget);
+    expect(launched, isEmpty);
+
+    await tester.tap(find.text('Open anyway'));
     await tester.pumpAndSettle();
 
     expect(launched, hasLength(1));
     final uri = Uri.parse(launched.single);
     expect(uri.host, 'claude.ai');
+    expect(uri.path, '/new');
     // The prompt survives being put in the link, rather than the link merely
     // opening a blank chat.
     expect(uri.queryParameters['q'], 'Run the framework on AAPL');
     expect(find.textContaining('Opening Claude'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('declining the bare chat opens nothing', (tester) async {
+    final launched = mockLauncher(tester);
+
+    await tester.pumpWidget(appWith(respondingWith(chart1d)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AAPL').first);
+    await tester.pumpAndSettle();
+    await tapAnalysis(tester);
+
+    // "Set project" goes to settings instead of opening the wrong chat.
+    await tester.tap(find.text('Set project'));
+    await tester.pumpAndSettle();
+
+    expect(launched, isEmpty);
+    expect(find.byType(SettingsScreen), findsOneWidget);
 
     await teardown(tester);
   });
@@ -368,44 +410,26 @@ void main() {
       'ticker.analysis.claudeProject.v1': 'https://claude.ai/project/abc123',
     });
 
-    final launched = <String>[];
-    const launcher = MethodChannel('plugins.flutter.io/url_launcher');
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async => null,
-    );
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(launcher, (
-      call,
-    ) async {
-      final url = (call.arguments as Map)['url'];
-      if (url is String) launched.add(url);
-      return true;
-    });
-    addTearDown(() {
-      tester.binding.defaultBinaryMessenger
-        ..setMockMethodCallHandler(SystemChannels.platform, null)
-        ..setMockMethodCallHandler(launcher, null);
-    });
+    final launched = mockLauncher(tester);
 
     await tester.pumpWidget(appWith(respondingWith(chart1d)));
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('AAPL').first);
     await tester.pumpAndSettle();
+    await tapAnalysis(tester);
 
-    final button = find.widgetWithText(
-      OutlinedButton,
-      'Run framework analysis',
-    );
-    await tester.ensureVisible(button);
-    await tester.pumpAndSettle();
-    await tester.tap(button);
-    await tester.pumpAndSettle();
+    // A configured project goes straight there — no question to answer.
+    expect(find.text('No Claude project set'), findsNothing);
 
     expect(launched, hasLength(1));
     final uri = Uri.parse(launched.single);
     expect(uri.path, '/project/abc123');
-    expect(uri.queryParameters['q'], 'Run the framework on AAPL');
+
+    // No `?q=`: that is the new-chat route's parameter, and carrying it on a
+    // project link risks landing in a bare chat, which is the whole point of
+    // having a project link. The clipboard carries the prompt.
+    expect(uri.query, isEmpty);
     expect(find.textContaining('Opening your project'), findsOneWidget);
 
     await teardown(tester);

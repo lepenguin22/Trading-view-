@@ -127,7 +127,20 @@ void main() {
       );
 
       expect(uri.path, '/project/abc123');
-      expect(uri.queryParameters['q'], 'Run the framework on NVDA');
+    });
+
+    test('a project link carries no prompt query', () {
+      // `?q=` is what the new-chat route reads. On a project link there is no
+      // composer for it to fill, and carrying it risks being routed to a bare
+      // chat — the one outcome a project link exists to avoid. The clipboard
+      // carries the prompt.
+      final uri = claudeUriFor(
+        'Run the framework on NVDA',
+        projectUrl: Uri.https('claude.ai', '/project/abc123'),
+      );
+
+      expect(uri.query, isEmpty);
+      expect(uri.toString(), 'https://claude.ai/project/abc123');
     });
 
     test('falls back to a new chat when no project is set', () {

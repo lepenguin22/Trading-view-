@@ -62,12 +62,16 @@ Uri? parseClaudeProjectUrl(String raw) {
 /// A link to Claude carrying [prompt].
 ///
 /// Targets [projectUrl] when one is set, so an analysis starts where the
-/// framework and its history already live. The prompt is attached as a query
-/// parameter either way: it fills the composer where that is supported, and is
-/// harmlessly ignored where it is not — the button copies the prompt to the
-/// clipboard first, which is what actually guarantees the handoff.
+/// framework and its history already live.
+///
+/// The prompt rides along only on the new-chat link, never on a project link.
+/// A project page has no composer to prefill, and `?q=` there is the query
+/// string the new-chat route reads — carrying it risks being routed to a bare
+/// chat, which is the one outcome a project link exists to avoid. The prompt
+/// is on the clipboard regardless, and that is what actually carries it.
 Uri claudeUriFor(String prompt, {Uri? projectUrl}) {
-  final base = projectUrl ?? Uri.parse(claudeNewChat);
+  if (projectUrl != null) return projectUrl;
+  final base = Uri.parse(claudeNewChat);
   if (prompt.isEmpty) return base;
   return base.replace(queryParameters: {'q': prompt});
 }
