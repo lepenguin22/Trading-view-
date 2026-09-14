@@ -16,6 +16,7 @@ import '../utils/chart.dart';
 import '../utils/analysis_prompt.dart';
 import '../utils/format.dart';
 import '../utils/indicators.dart';
+import 'settings_screen.dart';
 import '../widgets/alert_sheet.dart';
 import '../widgets/change_pill.dart';
 import '../widgets/price_chart.dart';
@@ -764,6 +765,13 @@ class _DetailScreenState extends State<DetailScreen> {
     if (!mounted) return;
     final project = saved == null ? null : parseClaudeProjectUrl(saved);
 
+    // No project configured means the analysis would open a bare chat, outside
+    // the project where the framework and every past analysis live. That is
+    // indistinguishable, from the phone, from the link being broken — so say
+    // so rather than opening the wrong thing quietly.
+    if (project == null && !await _confirmNoProject()) return;
+    if (!mounted) return;
+
     var opened = false;
     try {
       opened = await launchUrl(
@@ -788,6 +796,47 @@ class _DetailScreenState extends State<DetailScreen> {
         ),
       ),
     );
+  }
+
+  /// Asks whether to go ahead without a project, offering to set one instead.
+  ///
+  /// Returns true to open a plain chat anyway — someone may genuinely want one,
+  /// and refusing outright would be worse than the silent fallback this
+  /// replaces.
+  Future<bool> _confirmNoProject() async {
+    final c = context.colors;
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: c.card,
+        title: Text('No Claude project set', style: TextStyle(color: c.text)),
+        content: Text(
+          'The analysis will open a new chat on its own, not inside your '
+          'project — so it will not see your past analyses. Set the project '
+          'link under Settings to keep them together.',
+          style: TextStyle(color: c.textMuted),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'anyway'),
+            child: const Text('Open anyway'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'settings'),
+            child: const Text('Set project'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return false;
+
+    if (choice == 'settings') {
+      await Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const SettingsScreen()));
+      return false;
+    }
+    return choice == 'anyway';
   }
 
   Widget _analysisButton() {
