@@ -30,7 +30,7 @@ void main() {
       expect(a.takeHome, b.takeHome);
     });
 
-    test('flags a plan that invests more than take-home allows', () {
+    test('flags outgoings larger than take-home allows', () {
       const overspending = ProjectionInput(
         grossMonthlySalary: 4300,
         employeeCpfPercent: 20,
@@ -42,10 +42,61 @@ void main() {
         monthlyInvestment: 900,
       );
 
-      expect(overspending.investsBeyondTakeHome, isTrue);
+      expect(overspending.outgoingsExceedTakeHome, isTrue);
       expect(overspending.remainingAfterInvesting, closeTo(-560, 0.01));
-      expect(affordable.investsBeyondTakeHome, isFalse);
+      expect(affordable.outgoingsExceedTakeHome, isFalse);
       expect(affordable.remainingAfterInvesting, closeTo(2540, 0.01));
+    });
+
+    test('spending comes out of take-home before anything is left over', () {
+      // 4,300 gross at 20% CPF is 3,440 take-home. Spend 1,250 and invest
+      // 919 and 1,271 is left.
+      const input = ProjectionInput(
+        grossMonthlySalary: 4300,
+        employeeCpfPercent: 20,
+        monthlyExpenses: 1250,
+        monthlyInvestment: 919,
+      );
+
+      expect(input.takeHome, closeTo(3440, 0.01));
+      expect(input.afterExpenses, closeTo(2190, 0.01));
+      expect(input.remainingAfterInvesting, closeTo(1271, 0.01));
+      expect(input.outgoingsExceedTakeHome, isFalse);
+    });
+
+    test('spending alone can put a plan beyond take-home', () {
+      // An investment well within take-home on its own stops being so once
+      // the month's spending is counted. Not flagging that was the gap.
+      const input = ProjectionInput(
+        grossMonthlySalary: 4300,
+        employeeCpfPercent: 20,
+        monthlyExpenses: 3000,
+        monthlyInvestment: 900,
+      );
+
+      expect(input.outgoingsExceedTakeHome, isTrue);
+      expect(input.remainingAfterInvesting, closeTo(-460, 0.01));
+    });
+
+    test('spending does not change the projection itself', () {
+      // How much is invested is an input, not something derived from what is
+      // left — so spending says whether a plan is affordable, and nothing
+      // more. Quietly reducing the contribution would project a plan the
+      // user never described.
+      const without = ProjectionInput(
+        grossMonthlySalary: 4300,
+        monthlyInvestment: 900,
+        years: 10,
+      );
+      const with_ = ProjectionInput(
+        grossMonthlySalary: 4300,
+        monthlyInvestment: 900,
+        monthlyExpenses: 2000,
+        years: 10,
+      );
+
+      expect(project(with_).last.invested, project(without).last.invested);
+      expect(project(with_).last.cpf, project(without).last.cpf);
     });
   });
 

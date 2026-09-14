@@ -54,7 +54,15 @@ String formatValue(double value, [String currency = 'USD']) {
   final code = minor != null ? minor.major : currency;
 
   final symbol = NumberFormat.simpleCurrency(name: code).currencySymbol;
-  return NumberFormat.currency(symbol: symbol, decimalDigits: 2).format(amount);
+  final text = NumberFormat.currency(
+    symbol: symbol,
+    decimalDigits: 2,
+  ).format(amount);
+
+  // A typographic minus, matching [formatSignedValue]. The two appear in the
+  // same column on the calculator — a spending row above a total — and an
+  // ASCII hyphen beside a real minus reads as a different kind of number.
+  return text.replaceFirst('-', '\u2212');
 }
 
 /// Formats a signed money amount, e.g. a day change in a portfolio's currency.

@@ -14,6 +14,7 @@ const _kEmployeeCpf = 'employeeCpf';
 const _kEmployerCpf = 'employerCpf';
 const _kCeiling = 'ceiling';
 const _kMonthlyInvestment = 'monthlyInvestment';
+const _kExpenses = 'expenses';
 const _kStartInvestments = 'startInvestments';
 const _kStartCpf = 'startCpf';
 const _kInvestReturn = 'investReturn';
@@ -46,6 +47,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _kEmployerCpf: 17,
     _kCeiling: 0,
     _kMonthlyInvestment: 0,
+    _kExpenses: 0,
     _kStartInvestments: 0,
     _kStartCpf: 0,
     _kInvestReturn: 7,
@@ -102,6 +104,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       // not a ceiling of nothing, which would stop CPF entirely.
       cpfSalaryCeiling: ceiling > 0 ? ceiling : null,
       monthlyInvestment: _value(_kMonthlyInvestment),
+      monthlyExpenses: _value(_kExpenses),
       startingInvestments: _value(_kStartInvestments),
       startingCpf: _value(_kStartCpf),
       investmentReturnPercent: _value(_kInvestReturn),
@@ -171,7 +174,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               color: c.up,
             ),
           ]),
-          _card('Salary', [
+          _card('Salary and spending', [
             _field(_kGross, 'Gross monthly salary'),
             _field(_kEmployeeCpf, 'Your CPF contribution', suffix: '%'),
             _field(_kEmployerCpf, "Employer's CPF contribution", suffix: '%'),
@@ -181,18 +184,37 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               hint: 'e.g. 7400',
             ),
             _field(_kGrowth, 'Annual pay rise', suffix: '%'),
+            _field(
+              _kExpenses,
+              'Average monthly spending',
+              hint: 'rent, food, transport, insurance',
+            ),
             const SizedBox(height: 6),
+            // Written as the subtraction it is, rather than two totals with
+            // the working left out: what is left over is the number the rest
+            // of this screen spends, and it should be obvious where it came
+            // from.
             _row('Take-home pay', formatValue(input.takeHome, widget.currency)),
             _row(
-              'Left after investing',
-              formatValue(input.remainingAfterInvesting, widget.currency),
-              color: input.investsBeyondTakeHome ? c.down : null,
+              'Less spending',
+              formatSignedValue(-input.monthlyExpenses, widget.currency),
             ),
-            if (input.investsBeyondTakeHome) ...[
+            _row(
+              'Less investing',
+              formatSignedValue(-input.monthlyInvestment, widget.currency),
+            ),
+            _row(
+              'Left over',
+              formatValue(input.remainingAfterInvesting, widget.currency),
+              bold: true,
+              color: input.outgoingsExceedTakeHome ? c.down : null,
+            ),
+            if (input.outgoingsExceedTakeHome) ...[
               const SizedBox(height: 6),
               Text(
-                'That invests more than take-home pay covers. The projection '
-                'still runs, but the money has to come from somewhere.',
+                'Spending and investing together come to more than take-home '
+                'pay covers. The projection still runs, but the money has to '
+                'come from somewhere.',
                 style: TextStyle(color: c.down, fontSize: 12.5, height: 1.4),
               ),
             ],
