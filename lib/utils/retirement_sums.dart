@@ -121,3 +121,49 @@ RetirementCheck? checkRetirementSums(
     ),
   );
 }
+
+/// Where a projection stands against the three sums, as one line.
+typedef RetirementStanding = ({
+  /// The highest sum cleared, or null when none is.
+  String? cleared,
+
+  /// The next one up, or null when the Enhanced sum is already cleared.
+  String? next,
+
+  /// What is missing from [next]; zero when there is nothing left to clear.
+  double shortfall,
+});
+
+/// Reduces a [RetirementCheck] to the highest bar cleared and the next one.
+///
+/// The card lists all three, but the summary at the top of the screen has room
+/// for one line, and "which bar am I over" is the question that line should
+/// answer. Without it the verdict lives eight cards down, past four CPF cards,
+/// where it reads as absent.
+RetirementStanding standingOf(RetirementCheck check) {
+  final held = check.eligible;
+  final sums = check.sums;
+
+  if (held >= sums.ers) {
+    return (cleared: 'Enhanced', next: null, shortfall: 0);
+  }
+  if (held >= sums.frs) {
+    return (cleared: 'Full', next: 'Enhanced', shortfall: sums.ers - held);
+  }
+  if (held >= sums.brs) {
+    return (cleared: 'Basic', next: 'Full', shortfall: sums.frs - held);
+  }
+  return (cleared: null, next: 'Basic', shortfall: sums.brs - held);
+}
+
+/// How many more years a projection needs before it reaches 55.
+///
+/// Zero when it already does. The default horizon is twenty years, which for
+/// anyone under 35 stops short of 55 and leaves the whole retirement question
+/// unanswerable — so the number of years missing is worth naming rather than
+/// leaving to be worked out.
+int yearsShortOf55(int age, int years) {
+  if (age <= 0 || age > 55) return 0;
+  final needed = 55 - age;
+  return years >= needed ? 0 : needed - years;
+}

@@ -140,4 +140,60 @@ void main() {
       expect(check.sums.brs, closeTo(retirementSumsFor(2051).brs, 0.01));
     });
   });
+
+  group('standingOf', () {
+    RetirementCheck held(double amount) => (
+      cohortYear: 2051,
+      eligible: amount,
+      excludedMediSave: 0,
+      sums: (brs: 100.0, frs: 200.0, ers: 400.0),
+    );
+
+    test('names the highest bar cleared and the next one up', () {
+      expect(standingOf(held(50)).cleared, isNull);
+      expect(standingOf(held(50)).next, 'Basic');
+      expect(standingOf(held(50)).shortfall, closeTo(50, 0.01));
+
+      expect(standingOf(held(150)).cleared, 'Basic');
+      expect(standingOf(held(150)).next, 'Full');
+      expect(standingOf(held(150)).shortfall, closeTo(50, 0.01));
+
+      expect(standingOf(held(300)).cleared, 'Full');
+      expect(standingOf(held(300)).next, 'Enhanced');
+      expect(standingOf(held(300)).shortfall, closeTo(100, 0.01));
+    });
+
+    test('nothing is left once the Enhanced sum is cleared', () {
+      final top = standingOf(held(400));
+      expect(top.cleared, 'Enhanced');
+      expect(top.next, isNull);
+      expect(top.shortfall, 0);
+    });
+
+    test('landing exactly on a bar counts as clearing it', () {
+      expect(standingOf(held(100)).cleared, 'Basic');
+      expect(standingOf(held(200)).cleared, 'Full');
+    });
+  });
+
+  group('yearsShortOf55', () {
+    test('names how many years a projection is missing', () {
+      // The default horizon is twenty years, which for anyone under 35 stops
+      // short of 55 and leaves the whole question unanswerable — the case
+      // that made this feature look absent.
+      expect(yearsShortOf55(28, 20), 7);
+      expect(yearsShortOf55(30, 20), 5);
+      expect(yearsShortOf55(35, 20), 0);
+    });
+
+    test('is zero once the projection already reaches 55', () {
+      expect(yearsShortOf55(30, 25), 0);
+      expect(yearsShortOf55(30, 40), 0);
+    });
+
+    test('claims nothing without a usable age', () {
+      expect(yearsShortOf55(0, 20), 0);
+      expect(yearsShortOf55(60, 20), 0);
+    });
+  });
 }

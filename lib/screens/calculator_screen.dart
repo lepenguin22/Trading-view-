@@ -236,6 +236,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               formatValue(summary.growth, widget.currency),
               color: c.up,
             ),
+            // The retirement verdict belongs here as well as in its own card:
+            // that card is eighth of nine, past four CPF cards, and a reader
+            // who never scrolls that far reads its absence as "nothing to
+            // say" rather than "further down".
+            ..._retirementLine(points),
           ]),
           _card('Salary and spending', [
             _field(_kGross, 'Gross monthly salary'),
@@ -461,6 +466,49 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
+  /// The retirement verdict, as one line for the summary at the top.
+  List<Widget> _retirementLine(List<ProjectionPoint> points) {
+    final c = context.colors;
+    final input = _input;
+    if (input.currentAge <= 0 || input.currentAge > 55) return const [];
+
+    final check = checkRetirementSums(
+      points,
+      input,
+      DateTime.now().year,
+      base: _value(_kBrs),
+      growthPercent: _value(_kBrsGrowth),
+    );
+
+    if (check == null) {
+      final missing = yearsShortOf55(input.currentAge, input.years);
+      return [
+        const Divider(height: 20),
+        _row(
+          'Retirement sums',
+          '$missing more years to reach 55',
+          color: c.textMuted,
+        ),
+      ];
+    }
+
+    final standing = standingOf(check);
+    return [
+      const Divider(height: 20),
+      _row(
+        'At 55',
+        standing.cleared == null ? 'under Basic' : 'clears ${standing.cleared}',
+        bold: true,
+        color: standing.cleared == null ? c.down : c.up,
+      ),
+      if (standing.next != null)
+        _row(
+          'Short of ${standing.next}',
+          formatCompactValue(standing.shortfall, widget.currency),
+        ),
+    ];
+  }
+
   /// Whether the projection reaches the retirement sums, measured at 55.
   List<Widget> _retirementCard(List<ProjectionPoint> points) {
     final c = context.colors;
@@ -476,12 +524,15 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     if (check == null) {
       // Said rather than hidden: an absent card reads as "you are fine".
       if (input.currentAge <= 0 || input.currentAge > 55) return const [];
+      final missing = yearsShortOf55(input.currentAge, input.years);
       return [
         _card('Retirement sums', [
           Text(
-            'The projection stops before 55, which is when the Retirement '
-            'Account is formed and the sums are measured. Give it enough '
-            'years to reach 55 and this will fill in.',
+            'The sums are measured at 55, when the Retirement Account is '
+            'formed, and this projection stops at '
+            '${input.currentAge + input.years}. Set the horizon to '
+            '${55 - input.currentAge} years — '
+            '$missing more than now — and this fills in.',
             style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
           ),
         ]),
