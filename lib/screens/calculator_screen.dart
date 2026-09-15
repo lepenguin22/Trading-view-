@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../utils/cpf_allocation.dart';
 import '../utils/portfolio_capital.dart';
+import '../utils/retirement_sums.dart';
 import '../utils/projection.dart';
 import '../widgets/projection_chart.dart';
 
@@ -21,6 +22,8 @@ const _kMonthlyInvestment = 'monthlyInvestment';
 const _kExpenses = 'expenses';
 const _kStartInvestments = 'startInvestments';
 const _kFxRate = 'fxRate';
+const _kBrs = 'brs';
+const _kBrsGrowth = 'brsGrowth';
 const _kStartOa = 'startOa';
 const _kStartSa = 'startSa';
 const _kStartMa = 'startMa';
@@ -62,6 +65,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _kExpenses: 0,
     _kStartInvestments: 0,
     _kFxRate: 0,
+    _kBrs: brsBaseAmount,
+    _kBrsGrowth: brsGrowthPercentDefault,
     _kStartOa: 0,
     _kStartSa: 0,
     _kStartMa: 0,
@@ -383,6 +388,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             _field(_kStartMa, 'Balance today'),
             _field(_kMaReturn, 'Interest rate', suffix: '%'),
           ]),
+          ..._retirementCard(points),
           _card('Horizon', [_field(_kYears, 'Years')]),
           const SizedBox(height: 8),
           Text(
@@ -453,6 +459,94 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         ),
       ),
     );
+  }
+
+  /// Whether the projection reaches the retirement sums, measured at 55.
+  List<Widget> _retirementCard(List<ProjectionPoint> points) {
+    final c = context.colors;
+    final input = _input;
+    final check = checkRetirementSums(
+      points,
+      input,
+      DateTime.now().year,
+      base: _value(_kBrs),
+      growthPercent: _value(_kBrsGrowth),
+    );
+
+    if (check == null) {
+      // Said rather than hidden: an absent card reads as "you are fine".
+      if (input.currentAge <= 0 || input.currentAge > 55) return const [];
+      return [
+        _card('Retirement sums', [
+          Text(
+            'The projection stops before 55, which is when the Retirement '
+            'Account is formed and the sums are measured. Give it enough '
+            'years to reach 55 and this will fill in.',
+            style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
+          ),
+        ]),
+      ];
+    }
+
+    Widget bar(String name, double target) {
+      final short = target - check.eligible;
+      return _row(
+        '$name  ${formatCompactValue(target, widget.currency)}',
+        short <= 0
+            ? 'reached'
+            : 'short ${formatCompactValue(short, widget.currency)}',
+        color: short <= 0 ? c.up : c.textMuted,
+      );
+    }
+
+    return [
+      _card('Retirement sums', [
+        _row('You turn 55 in', '${check.cohortYear}'),
+        _row(
+          'Ordinary + Special then',
+          formatValue(check.eligible, widget.currency),
+          bold: true,
+        ),
+        const Divider(height: 20),
+        bar('Basic', check.sums.brs),
+        bar('Full', check.sums.frs),
+        bar('Enhanced', check.sums.ers),
+        const SizedBox(height: 8),
+        Text(
+          'MediSave is not counted. The Retirement Account is formed from the '
+          'Special Account and then the Ordinary Account; MediSave stays where '
+          'it is, so including its '
+          '${formatCompactValue(check.excludedMediSave, widget.currency)} '
+          'would clear the bar with money that was never eligible.',
+          style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
+        ),
+        if (isExtrapolated(check.cohortYear)) ...[
+          const SizedBox(height: 8),
+          Text(
+            'The sums are fixed for life at the year you turn 55, and only the '
+            'cohorts up to $lastAnnouncedCohort have been announced. '
+            '${check.cohortYear} is beyond that, so these three are this '
+            "app's extrapolation, not CPF's figures — measuring against "
+            "today's sums instead would clear the Full sum on paper and miss "
+            'it by half in life.',
+            style: TextStyle(color: c.down, fontSize: 12.5, height: 1.4),
+          ),
+        ],
+        const SizedBox(height: 10),
+        _field(_kBrs, 'Basic Retirement Sum, $brsBaseYear cohort'),
+        _field(_kBrsGrowth, 'Assumed annual rise', suffix: '%'),
+        const SizedBox(height: 6),
+        Text(
+          'Full is twice Basic, which has held throughout. Enhanced is '
+          '${ersMultipleFor(check.cohortYear).toStringAsFixed(0)} times it — '
+          'three until the $ersQuadrupleFrom cohort, four from it, because '
+          'that multiple is policy and has already moved once. The rise '
+          'defaults to the $brsGrowthPercentDefault% a year set for the '
+          '2023-to-$lastAnnouncedCohort cohorts.',
+          style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
+        ),
+      ]),
+    ];
   }
 
   /// The imported portfolio, offered as a starting balance.

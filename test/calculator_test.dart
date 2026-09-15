@@ -424,6 +424,59 @@ void main() {
     expect(canvas.size.height, greaterThan(200));
   });
 
+  testWidgets('the retirement sums are measured at 55, MediSave excluded', (
+    tester,
+  ) async {
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '10000');
+    await type(tester, 'Your age (blank to set the shares yourself)', '50');
+    await type(tester, 'Years', '20');
+
+    final card = find
+        .ancestor(
+          of: find.text('Retirement sums'),
+          matching: find.byType(Column),
+        )
+        .first;
+
+    // Turning 55 five years from a 2026-ish run, so a cohort past the last
+    // announced one — the warning must be there.
+    expect(find.textContaining('have been announced'), findsOneWidget);
+    expect(find.textContaining('MediSave is not counted'), findsOneWidget);
+
+    // Ordinary + Special at 55, not the whole projection and not the total.
+    final eligible = _money(
+      valueFor(tester, 'Ordinary + Special then', within: card),
+    );
+    final oaAtEnd = _money(
+      valueFor(tester, 'Ordinary Account', within: projection()),
+    );
+    expect(eligible, greaterThan(0));
+    // The projection runs fifteen years past 55, so the end balance is larger.
+    expect(eligible, lessThan(oaAtEnd * 2));
+  });
+
+  testWidgets('a projection stopping before 55 says so rather than nothing', (
+    tester,
+  ) async {
+    await open(tester);
+    await type(tester, 'Your age (blank to set the shares yourself)', '30');
+    await type(tester, 'Years', '5');
+
+    // An absent card would read as "you are fine".
+    expect(find.textContaining('stops before 55'), findsOneWidget);
+
+    await type(tester, 'Years', '30');
+    expect(find.textContaining('stops before 55'), findsNothing);
+  });
+
+  testWidgets('no age means no retirement claim at all', (tester) async {
+    await open(tester);
+    await type(tester, 'Years', '40');
+
+    expect(find.text('Retirement sums'), findsNothing);
+  });
+
   testWidgets('inputs survive leaving and returning', (tester) async {
     await open(tester);
     await type(tester, 'Gross monthly salary', '4300');
