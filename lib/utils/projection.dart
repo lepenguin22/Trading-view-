@@ -13,7 +13,9 @@ class ProjectionPoint {
     required this.grossSalary,
     required this.takeHome,
     required this.invested,
-    required this.cpf,
+    required this.oa,
+    required this.sa,
+    required this.ma,
     required this.contributedToInvestments,
     required this.contributedToCpf,
   });
@@ -30,8 +32,17 @@ class ProjectionPoint {
   /// Investment balance at the end of this month.
   final double invested;
 
-  /// CPF balance at the end of this month.
-  final double cpf;
+  /// Ordinary Account balance at the end of this month.
+  final double oa;
+
+  /// Special Account balance.
+  final double sa;
+
+  /// MediSave balance.
+  final double ma;
+
+  /// The three CPF accounts together.
+  double get cpf => oa + sa + ma;
 
   /// Cumulative amount paid into investments, excluding growth.
   final double contributedToInvestments;
@@ -47,14 +58,20 @@ class ProjectionInput {
   const ProjectionInput({
     this.grossMonthlySalary = 0,
     this.employeeCpfPercent = 20,
-    this.employerCpfPercent = 17,
     this.cpfSalaryCeiling,
     this.monthlyInvestment = 0,
     this.monthlyExpenses = 0,
     this.startingInvestments = 0,
-    this.startingCpf = 0,
+    this.startingOa = 0,
+    this.startingSa = 0,
+    this.startingMa = 0,
+    this.oaPercent = 23,
+    this.saPercent = 6,
+    this.maPercent = 8,
     this.investmentReturnPercent = 7,
-    this.cpfReturnPercent = 2.5,
+    this.oaReturnPercent = 2.5,
+    this.saReturnPercent = 4,
+    this.maReturnPercent = 4,
     this.salaryGrowthPercent = 0,
     this.years = 20,
   });
@@ -63,9 +80,6 @@ class ProjectionInput {
 
   /// The employee's share, deducted from gross to give take-home.
   final double employeeCpfPercent;
-
-  /// The employer's share, which reaches CPF without passing through pay.
-  final double employerCpfPercent;
 
   /// Monthly wage above which no CPF is contributed, or null for no ceiling.
   ///
@@ -86,11 +100,33 @@ class ProjectionInput {
   final double monthlyExpenses;
 
   final double startingInvestments;
-  final double startingCpf;
+
+  /// Opening balances, per account.
+  final double startingOa;
+  final double startingSa;
+  final double startingMa;
+
+  /// Where each month's CPF lands, as a percentage of the wage — the form
+  /// CPF publishes its allocation tables in, so a rate looked up there can be
+  /// typed in as written.
+  ///
+  /// These three decide the contribution; [employeeCpfPercent] only decides
+  /// how much of it comes out of take-home pay. The rest is the employer's,
+  /// which is why [employerShareOfWagePercent] is derived rather than asked
+  /// for — two inputs that had to agree would be a rule to get wrong.
+  final double oaPercent;
+  final double saPercent;
+  final double maPercent;
 
   /// Annual nominal returns, compounded monthly.
   final double investmentReturnPercent;
-  final double cpfReturnPercent;
+
+  /// Per account, because they do not pay the same: the Ordinary Account
+  /// earns less than Special and MediSave, and averaging them into one rate
+  /// was the thing this split exists to stop.
+  final double oaReturnPercent;
+  final double saReturnPercent;
+  final double maReturnPercent;
 
   /// Annual pay rise, applied once every twelve months.
   final double salaryGrowthPercent;
@@ -115,6 +151,22 @@ class ProjectionInput {
   /// needs more than the pay it is built on should not look affordable.
   bool get outgoingsExceedTakeHome =>
       grossMonthlySalary > 0 && monthlyExpenses + monthlyInvestment > takeHome;
+
+  /// Everything reaching CPF each month, as a percentage of the wage.
+  double get cpfPercent => oaPercent + saPercent + maPercent;
+
+  /// The employer's share, as a percentage of the wage.
+  ///
+  /// Derived: what lands in CPF that did not come out of take-home pay.
+  double get employerShareOfWagePercent => cpfPercent - employeeCpfPercent;
+
+  /// True when more is taken from pay than reaches CPF, which cannot happen.
+  ///
+  /// It means the allocation and the employee rate disagree — most likely one
+  /// of them was typed for a different age band — and every CPF figure below
+  /// would be built on it.
+  bool get employeeRateExceedsCpf =>
+      grossMonthlySalary > 0 && employeeCpfPercent > cpfPercent;
 }
 
 double _fraction(double percent) => percent / 100;
@@ -132,15 +184,19 @@ List<ProjectionPoint> project(ProjectionInput input) {
   final months = input.years * 12;
   var salary = input.grossMonthlySalary;
   var invested = input.startingInvestments;
-  var cpf = input.startingCpf;
+  var oa = input.startingOa;
+  var sa = input.startingSa;
+  var ma = input.startingMa;
   var paidIn = 0.0;
   var paidToCpf = 0.0;
 
   final monthlyInvestmentRate = _fraction(input.investmentReturnPercent) / 12;
-  final monthlyCpfRate = _fraction(input.cpfReturnPercent) / 12;
-  final cpfRate = _fraction(
-    input.employeeCpfPercent + input.employerCpfPercent,
-  );
+  final monthlyOaRate = _fraction(input.oaReturnPercent) / 12;
+  final monthlySaRate = _fraction(input.saReturnPercent) / 12;
+  final monthlyMaRate = _fraction(input.maReturnPercent) / 12;
+  final oaRate = _fraction(input.oaPercent);
+  final saRate = _fraction(input.saPercent);
+  final maRate = _fraction(input.maPercent);
 
   final out = <ProjectionPoint>[
     ProjectionPoint(
@@ -148,7 +204,9 @@ List<ProjectionPoint> project(ProjectionInput input) {
       grossSalary: salary,
       takeHome: salary - salary * _fraction(input.employeeCpfPercent),
       invested: invested,
-      cpf: cpf,
+      oa: oa,
+      sa: sa,
+      ma: ma,
       contributedToInvestments: 0,
       contributedToCpf: 0,
     ),
@@ -164,12 +222,18 @@ List<ProjectionPoint> project(ProjectionInput input) {
     final eligible = input.cpfSalaryCeiling == null
         ? salary
         : (salary < input.cpfSalaryCeiling! ? salary : input.cpfSalaryCeiling!);
-    final cpfContribution = eligible * cpfRate;
+    // Each account takes its own share of the wage, so the split is exact
+    // rather than a proportion of a rounded total.
+    final toOa = eligible * oaRate;
+    final toSa = eligible * saRate;
+    final toMa = eligible * maRate;
 
     invested = invested * (1 + monthlyInvestmentRate) + input.monthlyInvestment;
-    cpf = cpf * (1 + monthlyCpfRate) + cpfContribution;
+    oa = oa * (1 + monthlyOaRate) + toOa;
+    sa = sa * (1 + monthlySaRate) + toSa;
+    ma = ma * (1 + monthlyMaRate) + toMa;
     paidIn += input.monthlyInvestment;
-    paidToCpf += cpfContribution;
+    paidToCpf += toOa + toSa + toMa;
 
     out.add(
       ProjectionPoint(
@@ -177,7 +241,9 @@ List<ProjectionPoint> project(ProjectionInput input) {
         grossSalary: salary,
         takeHome: salary - salary * _fraction(input.employeeCpfPercent),
         invested: invested,
-        cpf: cpf,
+        oa: oa,
+        sa: sa,
+        ma: ma,
         contributedToInvestments: paidIn,
         contributedToCpf: paidToCpf,
       ),
@@ -191,7 +257,9 @@ List<ProjectionPoint> project(ProjectionInput input) {
 class ProjectionSummary {
   const ProjectionSummary({
     required this.invested,
-    required this.cpf,
+    required this.oa,
+    required this.sa,
+    required this.ma,
     required this.contributedToInvestments,
     required this.contributedToCpf,
     required this.startingCapital,
@@ -204,15 +272,27 @@ class ProjectionSummary {
     final last = points.last;
     return ProjectionSummary(
       invested: last.invested,
-      cpf: last.cpf,
+      oa: last.oa,
+      sa: last.sa,
+      ma: last.ma,
       contributedToInvestments: last.contributedToInvestments,
       contributedToCpf: last.contributedToCpf,
-      startingCapital: input.startingInvestments + input.startingCpf,
+      startingCapital:
+          input.startingInvestments +
+          input.startingOa +
+          input.startingSa +
+          input.startingMa,
     );
   }
 
   final double invested;
-  final double cpf;
+  final double oa;
+  final double sa;
+  final double ma;
+
+  /// The three accounts together.
+  double get cpf => oa + sa + ma;
+
   final double contributedToInvestments;
   final double contributedToCpf;
   final double startingCapital;

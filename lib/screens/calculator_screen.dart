@@ -11,14 +11,20 @@ import '../widgets/projection_chart.dart';
 /// added later cannot shift what an older save meant.
 const _kGross = 'gross';
 const _kEmployeeCpf = 'employeeCpf';
-const _kEmployerCpf = 'employerCpf';
 const _kCeiling = 'ceiling';
 const _kMonthlyInvestment = 'monthlyInvestment';
 const _kExpenses = 'expenses';
 const _kStartInvestments = 'startInvestments';
-const _kStartCpf = 'startCpf';
+const _kStartOa = 'startOa';
+const _kStartSa = 'startSa';
+const _kStartMa = 'startMa';
+const _kOaPercent = 'oaPercent';
+const _kSaPercent = 'saPercent';
+const _kMaPercent = 'maPercent';
 const _kInvestReturn = 'investReturn';
-const _kCpfReturn = 'cpfReturn';
+const _kOaReturn = 'oaReturn';
+const _kSaReturn = 'saReturn';
+const _kMaReturn = 'maReturn';
 const _kGrowth = 'growth';
 const _kYears = 'years';
 
@@ -44,14 +50,20 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   static const _defaults = <String, double>{
     _kGross: 0,
     _kEmployeeCpf: 20,
-    _kEmployerCpf: 17,
     _kCeiling: 0,
     _kMonthlyInvestment: 0,
     _kExpenses: 0,
     _kStartInvestments: 0,
-    _kStartCpf: 0,
+    _kStartOa: 0,
+    _kStartSa: 0,
+    _kStartMa: 0,
+    _kOaPercent: 23,
+    _kSaPercent: 6,
+    _kMaPercent: 8,
     _kInvestReturn: 7,
-    _kCpfReturn: 2.5,
+    _kOaReturn: 2.5,
+    _kSaReturn: 4,
+    _kMaReturn: 4,
     _kGrowth: 0,
     _kYears: 20,
   };
@@ -99,16 +111,22 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     return ProjectionInput(
       grossMonthlySalary: _value(_kGross),
       employeeCpfPercent: _value(_kEmployeeCpf),
-      employerCpfPercent: _value(_kEmployerCpf),
       // Zero means "no ceiling", which is what an empty field should mean —
       // not a ceiling of nothing, which would stop CPF entirely.
       cpfSalaryCeiling: ceiling > 0 ? ceiling : null,
       monthlyInvestment: _value(_kMonthlyInvestment),
       monthlyExpenses: _value(_kExpenses),
       startingInvestments: _value(_kStartInvestments),
-      startingCpf: _value(_kStartCpf),
+      startingOa: _value(_kStartOa),
+      startingSa: _value(_kStartSa),
+      startingMa: _value(_kStartMa),
+      oaPercent: _value(_kOaPercent),
+      saPercent: _value(_kSaPercent),
+      maPercent: _value(_kMaPercent),
       investmentReturnPercent: _value(_kInvestReturn),
-      cpfReturnPercent: _value(_kCpfReturn),
+      oaReturnPercent: _value(_kOaReturn),
+      saReturnPercent: _value(_kSaReturn),
+      maReturnPercent: _value(_kMaReturn),
       salaryGrowthPercent: _value(_kGrowth),
       years: _value(_kYears).round().clamp(0, 60),
     );
@@ -159,8 +177,29 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               formatValue(summary.total, widget.currency),
               bold: true,
             ),
-            _row('Investments', formatValue(summary.invested, widget.currency)),
-            _row('CPF', formatValue(summary.cpf, widget.currency)),
+            // Each band on the chart above, named and valued. Swatched so a
+            // row can be matched to its band without counting upwards.
+            _row(
+              'Investments',
+              formatValue(summary.invested, widget.currency),
+              swatch: c.pots[3],
+            ),
+            _row(
+              'MediSave',
+              formatValue(summary.ma, widget.currency),
+              swatch: c.pots[2],
+            ),
+            _row(
+              'Special Account',
+              formatValue(summary.sa, widget.currency),
+              swatch: c.pots[1],
+            ),
+            _row(
+              'Ordinary Account',
+              formatValue(summary.oa, widget.currency),
+              swatch: c.pots[0],
+            ),
+            _row('CPF together', formatValue(summary.cpf, widget.currency)),
             const Divider(height: 20),
             _row(
               'Paid in',
@@ -177,7 +216,6 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           _card('Salary and spending', [
             _field(_kGross, 'Gross monthly salary'),
             _field(_kEmployeeCpf, 'Your CPF contribution', suffix: '%'),
-            _field(_kEmployerCpf, "Employer's CPF contribution", suffix: '%'),
             _field(
               _kCeiling,
               'CPF wage ceiling (blank for none)',
@@ -224,15 +262,49 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             _field(_kMonthlyInvestment, 'Monthly investment'),
             _field(_kInvestReturn, 'Expected annual return', suffix: '%'),
           ]),
-          _card('CPF', [
-            _field(_kStartCpf, 'CPF balance today'),
-            _field(_kCpfReturn, 'CPF interest rate', suffix: '%'),
+          _card('CPF — Ordinary Account', [
+            _field(_kStartOa, 'Balance today'),
+            _field(_kOaPercent, 'Share of wage', suffix: '%'),
+            _field(_kOaReturn, 'Interest rate', suffix: '%'),
+          ]),
+          _card('CPF — Special Account', [
+            _field(_kStartSa, 'Balance today'),
+            _field(_kSaPercent, 'Share of wage', suffix: '%'),
+            _field(_kSaReturn, 'Interest rate', suffix: '%'),
+          ]),
+          _card('CPF — MediSave', [
+            _field(_kStartMa, 'Balance today'),
+            _field(_kMaPercent, 'Share of wage', suffix: '%'),
+            _field(_kMaReturn, 'Interest rate', suffix: '%'),
+            const SizedBox(height: 6),
+            _row('Into CPF each month', '${_trim(input.cpfPercent)}% of wage'),
+            // Derived rather than asked for: what lands in CPF that did not
+            // come out of take-home pay is the employer's, and two inputs
+            // that had to agree would be a rule to get wrong.
+            _row(
+              "Employer's share",
+              '${_trim(input.employerShareOfWagePercent)}% of wage',
+              color: input.employeeRateExceedsCpf ? c.down : null,
+            ),
+            if (input.employeeRateExceedsCpf) ...[
+              const SizedBox(height: 6),
+              Text(
+                'More is coming out of your pay than reaches CPF, which '
+                'cannot happen — the shares above and your contribution rate '
+                'are probably from different age bands.',
+                style: TextStyle(color: c.down, fontSize: 12.5, height: 1.4),
+              ),
+            ],
             const SizedBox(height: 6),
             Text(
-              'CPF pays 2.5% on the Ordinary Account and 4% on Special and '
-              'MediSave, with an extra 1% on the first tranche. Set the blend '
-              'you expect — nothing here assumes a rate, a contribution '
-              'percentage or a ceiling, because all three change.',
+              'The three accounts are kept apart because they do not pay the '
+              'same: 2.5% on Ordinary against 4% on Special and MediSave, '
+              'with an extra 1% on the first tranche. Averaging them into one '
+              'rate hides which pot is doing the work.\n\n'
+              'Shares are percentages of your wage, the form CPF publishes '
+              'its allocation tables in, so a rate looked up there goes in as '
+              'written. They change with age — nothing here assumes one, or a '
+              'rate, or a ceiling.',
               style: TextStyle(
                 color: c.textFaint,
                 fontSize: 12.5,
@@ -312,12 +384,31 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     );
   }
 
-  Widget _row(String label, String value, {bool bold = false, Color? color}) {
+  Widget _row(
+    String label,
+    String value, {
+    bool bold = false,
+    Color? color,
+    Color? swatch,
+  }) {
     final c = context.colors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
+          // The swatch carries the identity; the label beside it stays in ink
+          // rather than taking the series colour.
+          if (swatch != null) ...[
+            Container(
+              width: 10,
+              height: 10,
+              decoration: BoxDecoration(
+                color: swatch,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+            const SizedBox(width: 7),
+          ],
           Expanded(
             child: Text(
               label,

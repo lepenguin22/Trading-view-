@@ -19,12 +19,10 @@ void main() {
       const a = ProjectionInput(
         grossMonthlySalary: 4300,
         employeeCpfPercent: 20,
-        employerCpfPercent: 17,
       );
       const b = ProjectionInput(
         grossMonthlySalary: 4300,
         employeeCpfPercent: 20,
-        employerCpfPercent: 0,
       );
 
       expect(a.takeHome, b.takeHome);
@@ -100,13 +98,122 @@ void main() {
     });
   });
 
+  group('the three CPF accounts', () {
+    test('each account takes its own share of the wage', () {
+      // 23/6/8 of 10,000 for one month, before any interest can matter much.
+      const input = ProjectionInput(
+        grossMonthlySalary: 10000,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 0,
+      );
+      final month = project(
+        ProjectionInput(
+          grossMonthlySalary: input.grossMonthlySalary,
+          oaReturnPercent: 0,
+          saReturnPercent: 0,
+          maReturnPercent: 0,
+          years: 1,
+        ),
+      )[1];
+
+      expect(month.oa, closeTo(2300, 0.01));
+      expect(month.sa, closeTo(600, 0.01));
+      expect(month.ma, closeTo(800, 0.01));
+      expect(month.cpf, closeTo(3700, 0.01));
+    });
+
+    test('each account compounds at its own rate', () {
+      // The reason for splitting at all: the Ordinary Account pays less than
+      // Special and MediSave, and one blended rate hid which pot was working.
+      const input = ProjectionInput(
+        startingOa: 10000,
+        startingSa: 10000,
+        startingMa: 10000,
+        oaPercent: 0,
+        saPercent: 0,
+        maPercent: 0,
+        oaReturnPercent: 2.5,
+        saReturnPercent: 4,
+        maReturnPercent: 4,
+        years: 10,
+      );
+      final end = project(input).last;
+
+      expect(end.sa, greaterThan(end.oa));
+      expect(end.ma, closeTo(end.sa, 0.01));
+      // 10,000 at 2.5% compounded monthly for 10 years.
+      expect(end.oa, closeTo(10000 * _monthly(2.5, 120), 0.01));
+      expect(end.sa, closeTo(10000 * _monthly(4, 120), 0.01));
+    });
+
+    test('the accounts sum to what CPF held before the split', () {
+      // Splitting must not change the total: the same 37% of wage reaches
+      // CPF, it is only recorded in three places now.
+      const input = ProjectionInput(
+        grossMonthlySalary: 10000,
+        oaReturnPercent: 3,
+        saReturnPercent: 3,
+        maReturnPercent: 3,
+        years: 5,
+      );
+      final end = project(input).last;
+
+      expect(end.cpf, closeTo(end.oa + end.sa + end.ma, 0.01));
+      expect(end.contributedToCpf, closeTo(3700 * 60, 0.01));
+    });
+
+    test('the wage ceiling caps every account together', () {
+      const capped = ProjectionInput(
+        grossMonthlySalary: 10000,
+        cpfSalaryCeiling: 7400,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 1,
+      );
+      final month = project(capped)[1];
+
+      expect(month.oa, closeTo(7400 * 0.23, 0.01));
+      expect(month.sa, closeTo(7400 * 0.06, 0.01));
+      expect(month.ma, closeTo(7400 * 0.08, 0.01));
+    });
+
+    test("the employer's share is what did not come out of pay", () {
+      // Derived rather than asked for, so the two can never disagree.
+      const input = ProjectionInput(
+        grossMonthlySalary: 4300,
+        employeeCpfPercent: 20,
+      );
+
+      expect(input.cpfPercent, closeTo(37, 0.01));
+      expect(input.employerShareOfWagePercent, closeTo(17, 0.01));
+      expect(input.employeeRateExceedsCpf, isFalse);
+    });
+
+    test('taking more from pay than reaches CPF is flagged', () {
+      // Impossible, and it means the allocation and the employee rate came
+      // from different age bands — every CPF figure would be built on it.
+      const input = ProjectionInput(
+        grossMonthlySalary: 4300,
+        employeeCpfPercent: 40,
+      );
+
+      expect(input.employeeRateExceedsCpf, isTrue);
+      expect(input.employerShareOfWagePercent, lessThan(0));
+    });
+  });
+
   group('compounding', () {
     test('a lump sum with no contributions matches the closed form', () {
       const input = ProjectionInput(
         startingInvestments: 10000,
         investmentReturnPercent: 6,
         years: 10,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
       );
 
       // 10000 * (1 + 0.06/12) ^ 120
@@ -119,7 +226,9 @@ void main() {
         monthlyInvestment: 500,
         investmentReturnPercent: 6,
         years: 10,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
       );
 
       // Ordinary annuity: PMT * ((1+r)^n - 1) / r
@@ -133,7 +242,9 @@ void main() {
         startingInvestments: 1000,
         monthlyInvestment: 100,
         investmentReturnPercent: 0,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 5,
       );
 
@@ -145,7 +256,7 @@ void main() {
     test('starts at the opening position, before any contribution', () {
       const input = ProjectionInput(
         startingInvestments: 1000,
-        startingCpf: 2000,
+        startingOa: 2000,
         monthlyInvestment: 100,
       );
       final first = project(input).first;
@@ -174,8 +285,9 @@ void main() {
       const input = ProjectionInput(
         grossMonthlySalary: 1000,
         employeeCpfPercent: 20,
-        employerCpfPercent: 17,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 1,
       );
 
@@ -189,16 +301,18 @@ void main() {
       const uncapped = ProjectionInput(
         grossMonthlySalary: 10000,
         employeeCpfPercent: 20,
-        employerCpfPercent: 17,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 1,
       );
       const capped = ProjectionInput(
         grossMonthlySalary: 10000,
         employeeCpfPercent: 20,
-        employerCpfPercent: 17,
         cpfSalaryCeiling: 7400,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 1,
       );
 
@@ -210,12 +324,16 @@ void main() {
       const input = ProjectionInput(
         grossMonthlySalary: 4300,
         cpfSalaryCeiling: 7400,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 2,
       );
       const noCeiling = ProjectionInput(
         grossMonthlySalary: 4300,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 2,
       );
 
@@ -229,9 +347,9 @@ void main() {
       // Same money in each, different rates: the balances must diverge.
       const input = ProjectionInput(
         startingInvestments: 10000,
-        startingCpf: 10000,
+        startingOa: 10000,
         investmentReturnPercent: 7,
-        cpfReturnPercent: 2.5,
+        oaReturnPercent: 2.5,
         years: 10,
       );
 
@@ -260,13 +378,17 @@ void main() {
     test('growth raises CPF contributions with it', () {
       const flat = ProjectionInput(
         grossMonthlySalary: 1000,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 5,
       );
       const growing = ProjectionInput(
         grossMonthlySalary: 1000,
         salaryGrowthPercent: 5,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 5,
       );
 
@@ -279,7 +401,9 @@ void main() {
         grossMonthlySalary: 7000,
         salaryGrowthPercent: 10,
         cpfSalaryCeiling: 7400,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 5,
       );
       final points = project(input);
@@ -305,7 +429,9 @@ void main() {
         startingInvestments: 1000,
         monthlyInvestment: 100,
         investmentReturnPercent: 6,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 10,
       );
       final summary = ProjectionSummary.of(project(input), input);
@@ -323,7 +449,9 @@ void main() {
         startingInvestments: 5000,
         monthlyInvestment: 50,
         investmentReturnPercent: 0,
-        cpfReturnPercent: 0,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
         years: 3,
       );
       final summary = ProjectionSummary.of(project(input), input);
@@ -331,4 +459,14 @@ void main() {
       expect(summary.growth, closeTo(0, 0.01));
     });
   });
+}
+
+/// Monthly compounding factor for an annual [percent] over [months].
+double _monthly(double percent, int months) {
+  final r = percent / 100 / 12;
+  var f = 1.0;
+  for (var i = 0; i < months; i++) {
+    f *= 1 + r;
+  }
+  return f;
 }
