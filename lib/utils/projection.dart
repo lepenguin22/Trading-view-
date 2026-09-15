@@ -50,6 +50,7 @@ class ProjectionInput {
     this.employerCpfPercent = 17,
     this.cpfSalaryCeiling,
     this.monthlyInvestment = 0,
+    this.monthlyExpenses = 0,
     this.startingInvestments = 0,
     this.startingCpf = 0,
     this.investmentReturnPercent = 7,
@@ -75,6 +76,15 @@ class ProjectionInput {
   final double? cpfSalaryCeiling;
 
   final double monthlyInvestment;
+
+  /// Average monthly spending, out of take-home pay.
+  ///
+  /// It does not drive the projection — how much is invested is an input, not
+  /// something derived from what is left — but without it "left after
+  /// investing" was take-home minus the investment alone, which on any real
+  /// budget is a number nobody has.
+  final double monthlyExpenses;
+
   final double startingInvestments;
   final double startingCpf;
 
@@ -91,12 +101,20 @@ class ProjectionInput {
   double get takeHome =>
       grossMonthlySalary - grossMonthlySalary * _fraction(employeeCpfPercent);
 
-  /// What is left of take-home after the monthly investment.
-  double get remainingAfterInvesting => takeHome - monthlyInvestment;
+  /// What is left of take-home once spending is out, before investing.
+  double get afterExpenses => takeHome - monthlyExpenses;
 
-  /// True when the plan invests more than take-home pay allows.
-  bool get investsBeyondTakeHome =>
-      grossMonthlySalary > 0 && monthlyInvestment > takeHome;
+  /// What is left once both spending and the monthly investment are out.
+  double get remainingAfterInvesting =>
+      takeHome - monthlyExpenses - monthlyInvestment;
+
+  /// True when spending and investing together come to more than take-home.
+  ///
+  /// The projection still runs — a month can be covered from savings, and
+  /// refusing to project would be less useful than saying so — but a plan that
+  /// needs more than the pay it is built on should not look affordable.
+  bool get outgoingsExceedTakeHome =>
+      grossMonthlySalary > 0 && monthlyExpenses + monthlyInvestment > takeHome;
 }
 
 double _fraction(double percent) => percent / 100;

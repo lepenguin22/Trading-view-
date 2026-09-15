@@ -300,8 +300,26 @@ whatever else is decided, and **investments** on top, because that is what the
 plan adds.
 
 Salary drives both. Gross less your CPF percentage gives take-home, and the
-projection says what is left after the monthly investment — if that goes
-negative it says so rather than quietly projecting money you do not have.
+month is then written out as the subtraction it is:
+
+```
+Take-home pay        $3,440.00
+Less spending       −$1,250.00
+Less investing        −$919.00
+Left over            $1,271.00
+```
+
+**Average monthly spending is an input** — rent, food, transport, insurance,
+whatever the month actually costs. Without it, "what is left" was take-home
+minus the investment alone, which on any real budget is a number nobody has,
+and a plan could look comfortably affordable while spending had already
+accounted for the money twice over. If what is left goes negative the
+calculator says so rather than quietly projecting money you do not have.
+
+**Spending does not change the projection.** How much is invested is what you
+typed, not something derived from what is left over — quietly trimming the
+contribution to fit the budget would project a plan you never described. What
+spending decides is whether the plan is affordable, and nothing else.
 
 **Nothing here encodes CPF policy.** Contribution percentages, the wage
 ceiling and the interest rate are all inputs, because every one of them has

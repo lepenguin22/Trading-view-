@@ -94,6 +94,51 @@ void main() {
     expect(find.textContaining('more than take-home pay covers'), findsNothing);
   });
 
+  testWidgets('spending comes out before what is left over', (tester) async {
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '4300');
+    await type(tester, 'Average monthly spending', '1250');
+    await type(tester, 'Monthly investment', '919');
+
+    // 3,440 take-home, less 1,250 spent and 919 invested.
+    expect(valueFor(tester, 'Take-home pay'), r'$3,440.00');
+    expect(valueFor(tester, 'Less spending'), r'−$1,250.00');
+    expect(valueFor(tester, 'Less investing'), r'−$919.00');
+    expect(valueFor(tester, 'Left over'), r'$1,271.00');
+  });
+
+  testWidgets('spending alone can put a plan beyond take-home', (tester) async {
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '4300');
+    await type(tester, 'Monthly investment', '900');
+
+    // Affordable on its own.
+    expect(find.textContaining('more than take-home'), findsNothing);
+
+    // And not, once the month's spending is counted — which is the case the
+    // warning missed before spending was an input at all.
+    await type(tester, 'Average monthly spending', '3000');
+    expect(find.textContaining('more than take-home'), findsOneWidget);
+    expect(valueFor(tester, 'Left over'), r'−$460.00');
+  });
+
+  testWidgets('spending is not quietly taken off the projection', (
+    tester,
+  ) async {
+    await open(tester);
+    await type(tester, 'Invested today', '10000');
+    await type(tester, 'Monthly investment', '500');
+    await type(tester, 'Years', '10');
+    final withoutSpending = valueFor(tester, 'Investments');
+
+    await type(tester, 'Gross monthly salary', '4300');
+    await type(tester, 'Average monthly spending', '3000');
+
+    // How much is invested is what the user typed. Reducing it to fit the
+    // budget would project a plan they never described.
+    expect(valueFor(tester, 'Investments'), withoutSpending);
+  });
+
   testWidgets('the projection grows and separates growth from contributions', (
     tester,
   ) async {

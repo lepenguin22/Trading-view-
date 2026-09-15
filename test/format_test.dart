@@ -123,4 +123,15 @@ void main() {
       expect(normaliseSymbol('   '), '');
     });
   });
+
+  group('formatValue sign', () {
+    test('negatives use the same minus as a signed amount', () {
+      // These sit in one column on the calculator — a spending row above the
+      // total it feeds — so an ASCII hyphen beside a typographic minus reads
+      // as a different kind of number.
+      expect(formatValue(-460, 'USD'), '\u2212\$460.00');
+      expect(formatSignedValue(-460, 'USD'), '\u2212\$460.00');
+      expect(formatValue(460, 'USD'), '\$460.00');
+    });
+  });
 }
