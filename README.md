@@ -432,6 +432,32 @@ Holdings the total could not price are named beside the count, the same way the
 portfolio summary names them — a starting balance quietly short of a position
 would compound that gap for every year of the projection.
 
+### The retirement sums
+
+Give an age and a horizon that reaches 55, and the calculator says whether the
+projection clears the Basic, Full or Enhanced Retirement Sum.
+
+Three things make this easy to get wrong, and all three are handled rather than
+left to the reader:
+
+- **MediSave is not counted.** The Retirement Account is formed at 55 from the
+  Special Account and then the Ordinary Account; MediSave stays where it is.
+  Counting it would clear the bar with money that was never eligible, so the
+  card shows the excluded amount and says why.
+- **The comparison happens at 55**, when the Retirement Account is formed — not
+  at the end of a projection that may run well past it. A projection stopping
+  before 55 says so rather than showing nothing, because an absent card reads
+  as "you are fine".
+- **The sums rise with every cohort**, and are fixed for life at the year *you*
+  turn 55. Measuring a 2053 balance against the 2026 Full sum would clear it on
+  paper and miss it by half in life.
+
+Only the cohorts up to **2027** have been announced — Budget 2022 set 2023 to
+2027 rising about 3.5% a year. Anything later is this app's extrapolation, not
+CPF's figures, and the card says so in as many words. The base sum and the
+assumed rise are both inputs; Full is twice Basic and Enhanced four times it,
+which CPF sets structurally rather than announcing separately.
+
 **Almost nothing here encodes CPF policy.** The age allocation table above is
 the single exception, and only when an age is given. Contribution percentages,
 the wage ceiling and the interest rates are all inputs, because every one of
