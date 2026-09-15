@@ -51,6 +51,49 @@ void main() {
     });
   });
 
+  group('allocationShifts', () {
+    test('lists the birthdays a projection crosses a band on', () {
+      // 28 today, twenty years: the bands change at 36 and 46. Not at 35 —
+      // CPF's first band is "35 and below", so 35 is still in it.
+      expect(allocationShifts(28, 20), [36, 46]);
+      expect(allocationShifts(28, 20), isNot(contains(35)));
+    });
+
+    test('a projection inside one band has nothing to list', () {
+      expect(allocationShifts(28, 5), isEmpty);
+      expect(allocationShifts(37, 5), isEmpty);
+    });
+
+    test('a shift on the very first birthday still counts', () {
+      expect(allocationShifts(35, 1), [36]);
+      expect(allocationShifts(45, 1), [46]);
+      expect(allocationShifts(50, 1), [51]);
+    });
+
+    test('nothing is listed without an age or without years', () {
+      expect(allocationShifts(0, 20), isEmpty);
+      expect(allocationShifts(28, 0), isEmpty);
+    });
+
+    test('no shift is invented past the age the table covers', () {
+      // The table holds the 50-to-55 band for anyone older, so there is no
+      // further change to report — the warning about outrunning it covers
+      // that instead of a shift that does not exist here.
+      expect(allocationShifts(50, 30), [51]);
+      expect(allocationShifts(60, 20), isEmpty);
+    });
+
+    test('every listed age is one where the split actually differs', () {
+      for (final age in allocationShifts(25, 30)) {
+        expect(
+          cpfAllocationFor(age),
+          isNot(cpfAllocationFor(age - 1)),
+          reason: 'listed $age but the split is unchanged there',
+        );
+      }
+    });
+  });
+
   group('projectionPassesCoveredAges', () {
     test('flags a projection that outruns the table', () {
       expect(projectionPassesCoveredAges(30, 20), isFalse);

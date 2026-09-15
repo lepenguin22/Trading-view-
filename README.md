@@ -361,7 +361,17 @@ Ordinary Account for most of it.
 | above 50 to 55 | 15% | 11.5% | 10.5% |
 
 Percentages of wage, for private-sector employees earning above $750 a month,
-effective 1 January 2026. Every band totals 37%: the bands move money between
+effective 1 January 2026.
+
+The band card names the shifts the projection will cross — **"Shifts at age 36,
+then 46"** for a 28-year-old over twenty years. Without it they are invisible: a
+barely-perceptible kink in the chart and nothing at all in the summary, so
+today's band reads as though it holds for the whole projection. A projection
+that stays inside one band says *"no change in 5 years"* rather than leaving the
+row empty, which would read as "unknown" instead of "none".
+
+Note the shift lands at **36, not 35**: CPF's first band is "35 and below", so
+the change falls on the birthday after it. Every band totals 37%: the bands move money between
 accounts, they do not change how much reaches CPF, and a test asserts it.
 
 The figures were cross-checked against CPF's published allocation *ratios* —

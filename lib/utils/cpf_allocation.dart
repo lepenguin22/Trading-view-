@@ -53,6 +53,32 @@ String cpfBandLabel(int age) {
   return 'above 55 — beyond what this models';
 }
 
+/// The ages at which the split changes during a projection.
+///
+/// Worth saying out loud because the shifts are otherwise invisible: they are
+/// a barely-perceptible kink in the chart and nothing at all in the summary,
+/// and someone reading today's band could reasonably assume it holds for the
+/// whole projection. It does not.
+///
+/// Empty when no age was given, or when the projection stays inside one band.
+/// Shifts past [cpfAllocationCoveredTo] are not listed because the table has
+/// none — that is what the warning about outrunning it is for.
+List<int> allocationShifts(int age, int years) {
+  if (age <= 0 || years <= 0) return const [];
+
+  final shifts = <int>[];
+  var previous = cpfAllocationFor(age);
+  for (var year = 1; year <= years; year++) {
+    final at = age + year;
+    final now = cpfAllocationFor(at);
+    if (now != previous) {
+      shifts.add(at);
+      previous = now;
+    }
+  }
+  return shifts;
+}
+
 /// Whether a projection from [age] running [years] reaches an age the table
 /// does not cover.
 bool projectionPassesCoveredAges(int age, int years) =>
