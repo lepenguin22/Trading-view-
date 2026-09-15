@@ -407,6 +407,31 @@ of take-home pay. Two inputs that had to agree would be a rule to get wrong; if
 more comes out of your pay than reaches CPF, which cannot happen, the
 calculator says so rather than projecting on it.
 
+### Starting from the portfolio
+
+The Investing card shows what the imported portfolio is currently worth and
+offers to take it as **Invested today**.
+
+**Offered, not applied.** The figure moves with every price refresh, and a
+projection whose opening balance drifts under the reader is worse than one they
+set deliberately. Taking it copies a number into the field, where it stays until
+they take it again.
+
+**A different currency needs a rate first.** CPF is Singapore-only, so the
+projection adds both pots in one currency — and a US portfolio is not in it.
+Both print a bare `$`, so an unconverted balance would look entirely correct and
+be a third light. The button stays disabled until a rate is given, and the
+converted figure is shown before it is taken.
+
+**A portfolio in several currencies is refused, not guessed.** There is no
+single starting figure, and the app holds no exchange rates of its own to make
+one; picking the largest and calling it the portfolio would be inventing an
+answer. It says so and leaves the field to you.
+
+Holdings the total could not price are named beside the count, the same way the
+portfolio summary names them — a starting balance quietly short of a position
+would compound that gap for every year of the projection.
+
 **Almost nothing here encodes CPF policy.** The age allocation table above is
 the single exception, and only when an age is given. Contribution percentages,
 the wage ceiling and the interest rates are all inputs, because every one of
