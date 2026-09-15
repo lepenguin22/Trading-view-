@@ -346,6 +346,41 @@ against 4% on Special and MediSave, and averaging them into a single rate hid
 which pot was doing the work. They stack as three bands on the chart, under
 investments, and appear as three rows in the summary.
 
+### Allocation by age
+
+Give the calculator your age and the split follows it — and keeps following it
+as the projection runs. Someone 34 today spends a twenty-year projection in
+three different bands, and holding the first for all twenty would overstate the
+Ordinary Account for most of it.
+
+| Age | Ordinary | Special | MediSave |
+|---|---|---|---|
+| 35 and below | 23% | 6% | 8% |
+| above 35 to 45 | 21% | 7% | 9% |
+| above 45 to 50 | 19% | 8% | 10% |
+| above 50 to 55 | 15% | 11.5% | 10.5% |
+
+Percentages of wage, for private-sector employees earning above $750 a month,
+effective 1 January 2026. Every band totals 37%: the bands move money between
+accounts, they do not change how much reaches CPF, and a test asserts it.
+
+The figures were cross-checked against CPF's published allocation *ratios* —
+the share of the contribution rather than of the wage — which reproduce them
+exactly at a 37% total: 0.5677 × 37 = 21.0, 0.4055 × 37 = 15.0,
+0.3108 × 37 = 11.5, 0.2837 × 37 = 10.5.
+
+**The table stops at 55, and says so.** Past that CPF stops working the way this
+models it: the Special Account closes, contributions go to a Retirement Account
+up to the Full Retirement Sum, and the total rate falls below 37%. None of that
+is modelled, so a projection running past 55 carries a warning rather than
+quietly producing numbers for it.
+
+**Leaving the age blank goes back to typing the shares in by hand.** That is the
+escape hatch, and it is the reason encoding this table is defensible at all:
+allocation moves, this one will go stale, and when it does the shares are still
+yours to set. It is the only CPF policy the app carries a number for — interest
+rates, your contribution rate and the wage ceiling all stay inputs.
+
 Shares are percentages of your wage, the form CPF publishes its allocation
 tables in, so a rate looked up there goes in as written. **The employer's share
 is derived, not asked for** — it is whatever reaches CPF that did not come out
@@ -353,10 +388,11 @@ of take-home pay. Two inputs that had to agree would be a rule to get wrong; if
 more comes out of your pay than reaches CPF, which cannot happen, the
 calculator says so rather than projecting on it.
 
-**Nothing here encodes CPF policy.** Contribution percentages, allocation
-shares, the wage ceiling and the interest rates are all inputs, because every
-one of them has changed in recent years — allocation shifts with age — and a
-calculator quietly using a stale figure is worse than one that asks. Defaults lean conservative where a guess would flatter the
+**Almost nothing here encodes CPF policy.** The age allocation table above is
+the single exception, and only when an age is given. Contribution percentages,
+the wage ceiling and the interest rates are all inputs, because every one of
+them has changed in recent years and a calculator quietly using a stale figure
+is worse than one that asks. Defaults lean conservative where a guess would flatter the
 result: CPF interest starts at the Ordinary Account's 2.5% rather than the 4%
 paid on Special and MediSave, and there is no pay rise unless you set one.
 

@@ -205,6 +205,102 @@ void main() {
     });
   });
 
+  group('allocation by age', () {
+    test('an age decides the split instead of the typed shares', () {
+      // The typed shares are deliberately absurd so that using them would be
+      // obvious; the age must win.
+      const input = ProjectionInput(
+        grossMonthlySalary: 10000,
+        currentAge: 40,
+        oaPercent: 1,
+        saPercent: 1,
+        maPercent: 1,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 1,
+      );
+      final month = project(input)[1];
+
+      // The 36-to-45 band: 21 / 7 / 9 of 10,000.
+      expect(month.oa, closeTo(2100, 0.01));
+      expect(month.sa, closeTo(700, 0.01));
+      expect(month.ma, closeTo(900, 0.01));
+    });
+
+    test('a blank age leaves the typed shares in charge', () {
+      const input = ProjectionInput(
+        grossMonthlySalary: 10000,
+        oaPercent: 10,
+        saPercent: 5,
+        maPercent: 5,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 1,
+      );
+      final month = project(input)[1];
+
+      expect(month.oa, closeTo(1000, 0.01));
+      expect(month.sa, closeTo(500, 0.01));
+      expect(month.ma, closeTo(500, 0.01));
+    });
+
+    test('the split shifts as the projection ages past a band', () {
+      // 34 today: the band changes at 36, two years in. Holding the first
+      // band for the whole projection is the thing this exists to stop.
+      const input = ProjectionInput(
+        grossMonthlySalary: 10000,
+        currentAge: 34,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 3,
+      );
+      final points = project(input);
+
+      double monthOa(int m) => points[m].oa - points[m - 1].oa;
+
+      // Year one and two are still the 35-and-below band.
+      expect(monthOa(1), closeTo(2300, 0.01));
+      expect(monthOa(12), closeTo(2300, 0.01));
+      expect(monthOa(24), closeTo(2300, 0.01));
+      // Turning 36 moves it to 21%.
+      expect(monthOa(25), closeTo(2100, 0.01));
+      expect(monthOa(36), closeTo(2100, 0.01));
+    });
+
+    test('shifting bands moves money between accounts, not out of CPF', () {
+      // Every band totals 37%, so what reaches CPF is the same either side of
+      // a birthday — only where it lands changes.
+      const input = ProjectionInput(
+        grossMonthlySalary: 10000,
+        currentAge: 34,
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 3,
+      );
+      final points = project(input);
+
+      for (final m in [1, 24, 25, 36]) {
+        final into =
+            (points[m].oa - points[m - 1].oa) +
+            (points[m].sa - points[m - 1].sa) +
+            (points[m].ma - points[m - 1].ma);
+        expect(into, closeTo(3700, 0.01), reason: 'month $m');
+      }
+    });
+
+    test('a projection outrunning the table says so', () {
+      const within = ProjectionInput(currentAge: 30, years: 20);
+      const beyond = ProjectionInput(currentAge: 40, years: 20);
+
+      expect(within.outgrowsAllocationTable, isFalse);
+      expect(beyond.outgrowsAllocationTable, isTrue);
+    });
+  });
+
   group('compounding', () {
     test('a lump sum with no contributions matches the closed form', () {
       const input = ProjectionInput(
