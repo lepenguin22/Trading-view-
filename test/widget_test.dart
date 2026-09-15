@@ -1185,6 +1185,61 @@ void main() {
     await teardown(tester);
   });
 
+  testWidgets('the calculator can start from the imported portfolio', (
+    tester,
+  ) async {
+    // Holdings priced at 100 apiece by the fake feed, so 15 shares are worth
+    // 1,500 — in USD, while the calculator projects in SGD alongside CPF.
+    tester.view.physicalSize = const Size(1200, 4000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10},{"symbol":"MSFT","shares":5}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.more_vert));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Calculator'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(r'$1,500.00 USD'), findsOneWidget);
+
+    // A USD balance cannot join an SGD projection without a rate, and both
+    // print a bare "$" — so the button stays disabled until one is given.
+    final button = find.widgetWithText(
+      OutlinedButton,
+      'Use as "Invested today"',
+    );
+    expect(tester.widget<OutlinedButton>(button).onPressed, isNull);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'USD to SGD'),
+      '1.28',
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(r'$1,920.00'), findsOneWidget);
+
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+
+    // Taken into the field, converted, where it stays until taken again.
+    expect(
+      tester
+          .widget<TextField>(find.widgetWithText(TextField, 'Invested today'))
+          .controller!
+          .text,
+      '1920.00',
+    );
+
+    await teardown(tester);
+  });
+
   testWidgets('a holding shows the scale its scores were marked on', (
     tester,
   ) async {

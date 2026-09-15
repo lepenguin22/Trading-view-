@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
+import '../models/holding.dart';
 import '../state/storage.dart';
+import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../utils/cpf_allocation.dart';
+import '../utils/portfolio_capital.dart';
 import '../utils/projection.dart';
 import '../widgets/projection_chart.dart';
 
@@ -16,6 +20,7 @@ const _kCeiling = 'ceiling';
 const _kMonthlyInvestment = 'monthlyInvestment';
 const _kExpenses = 'expenses';
 const _kStartInvestments = 'startInvestments';
+const _kFxRate = 'fxRate';
 const _kStartOa = 'startOa';
 const _kStartSa = 'startSa';
 const _kStartMa = 'startMa';
@@ -56,6 +61,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _kMonthlyInvestment: 0,
     _kExpenses: 0,
     _kStartInvestments: 0,
+    _kFxRate: 0,
     _kStartOa: 0,
     _kStartSa: 0,
     _kStartMa: 0,
@@ -155,6 +161,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       );
     }
 
+    // Nullable on purpose: the screen is useful without a portfolio behind it,
+    // and requiring one would mean every test of the arithmetic had to stand
+    // up a model and a feed to get at it.
+    final totals =
+        context.watch<WatchlistModel?>()?.portfolioTotals ??
+        const <PortfolioTotal>[];
     final input = _input;
     final byAge = input.currentAge > 0;
     final share = input.allocationAt(0);
@@ -268,6 +280,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             _field(_kStartInvestments, 'Invested today'),
             _field(_kMonthlyInvestment, 'Monthly investment'),
             _field(_kInvestReturn, 'Expected annual return', suffix: '%'),
+            ..._fromPortfolio(totals),
           ]),
           _card('CPF — how it is split', [
             _field(
@@ -440,6 +453,85 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         ),
       ),
     );
+  }
+
+  /// The imported portfolio, offered as a starting balance.
+  ///
+  /// Offered rather than applied: the figure moves with every price refresh,
+  /// and a projection whose opening balance drifts under the reader is worse
+  /// than one they set deliberately. Taking it copies a number into the field,
+  /// where it stays until they take it again.
+  List<Widget> _fromPortfolio(List<PortfolioTotal> totals) {
+    final c = context.colors;
+    if (totals.isEmpty) return const [];
+
+    final held = soleCurrency(totals);
+    if (held == null) {
+      return [
+        const SizedBox(height: 10),
+        Text(
+          'Your portfolio is held in ${totals.length} currencies, so it has no '
+          'single starting figure — and this app keeps no exchange rates of '
+          'its own to make one. Enter the balance yourself.',
+          style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
+        ),
+      ];
+    }
+
+    final converting = needsConversion(widget.currency, held);
+    final rate = _value(_kFxRate);
+    final capital = capitalIn(widget.currency, held, rate);
+
+    return [
+      const Divider(height: 24),
+      _row(
+        'Your portfolio',
+        '${formatValue(held.value, held.currency)} ${held.currency}',
+      ),
+      _row(
+        'Holdings counted',
+        held.unpriced == 0
+            ? '${held.priced}'
+            : '${held.priced}, ${held.unpriced} without a price',
+        color: held.unpriced == 0 ? null : c.down,
+      ),
+      if (converting) ...[
+        const SizedBox(height: 4),
+        _field(
+          _kFxRate,
+          '${held.currency} to ${widget.currency}',
+          hint: '1.28',
+        ),
+        if (capital == null)
+          Text(
+            'CPF is in ${widget.currency} and this projection adds the two '
+            'together, so a ${held.currency} balance needs a rate before it '
+            'can join it. Both print a bare "\$", which is exactly why this '
+            'does not just take the number.',
+            style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
+          )
+        else
+          _row('That is', formatValue(capital, widget.currency)),
+      ],
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: capital == null
+              ? null
+              : () => setState(() {
+                  _fields[_kStartInvestments]!.text = capital.toStringAsFixed(
+                    2,
+                  );
+                }),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: c.accent,
+            side: BorderSide(color: c.border),
+          ),
+          child: const Text('Use as "Invested today"'),
+        ),
+      ),
+    ];
   }
 
   /// "36, then 46", or why there is nothing to list.
