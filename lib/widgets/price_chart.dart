@@ -11,9 +11,6 @@ const _padding = 10.0;
 /// Gap between the plot and its price axis.
 const _axisGap = 6.0;
 
-/// Type scale for the axis labels and the price tags.
-const axisLabelSize = 10.0;
-
 /// Measures the gutter a price axis needs for [labels], so the plot can be
 /// narrowed before any geometry is built.
 ///

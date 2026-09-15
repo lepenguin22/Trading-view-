@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
+import '../utils/chart.dart';
 import '../utils/format.dart';
 import '../utils/projection.dart';
 
 const _height = 200.0;
 const _padding = 8.0;
+
+/// Room under the plot for the year labels.
+const _xAxisHeight = 16.0;
+
+/// Between the widest y label and the plot's left edge.
+const _axisGap = 6.0;
 
 /// One line per pot over the projection, each from a common zero.
 ///
@@ -81,13 +88,15 @@ class _ProjectionChartState extends State<ProjectionChart> {
                     '${formatValue(points.last.total, widget.currency)}.',
                 excludeSemantics: true,
                 child: CustomPaint(
-                  size: Size(width, _height),
+                  size: Size(width, _height + _xAxisHeight),
                   painter: _ProjectionPainter(
                     points: points,
                     colors: c.pots,
                     gridColor: c.border,
                     ruleColor: c.textFaint,
                     surface: c.card,
+                    labelColor: c.textFaint,
+                    currency: widget.currency,
                     scrubbed: _scrubbed,
                   ),
                 ),
@@ -224,6 +233,8 @@ class _ProjectionPainter extends CustomPainter {
     required this.gridColor,
     required this.ruleColor,
     required this.surface,
+    required this.labelColor,
+    required this.currency,
     required this.scrubbed,
   });
 
@@ -234,7 +245,18 @@ class _ProjectionPainter extends CustomPainter {
   final Color gridColor;
   final Color ruleColor;
   final Color surface;
+  final Color labelColor;
+  final String currency;
   final int? scrubbed;
+
+  /// Lays out one axis label, ready to measure or paint.
+  TextPainter _label(String text) => TextPainter(
+    text: TextSpan(
+      text: text,
+      style: TextStyle(color: labelColor, fontSize: axisLabelSize),
+    ),
+    textDirection: TextDirection.ltr,
+  )..layout();
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -249,8 +271,27 @@ class _ProjectionPainter extends CustomPainter {
     }
     if (maxValue <= 0) return;
 
-    final plotHeight = size.height - _padding * 2;
-    double x(int i) => size.width * i / (points.length - 1);
+    // Gridlines at round money values rather than at even fractions of the
+    // data's own range: an axis reading 250k, 500k, 750k is one a reader can
+    // use, where 308k, 616k, 925k is only a division of the maximum.
+    final ticks = niceTicks(0, maxValue);
+    final labels = {
+      for (final t in ticks) t: _label(formatCompactValue(t, currency)),
+    };
+
+    // Measured, not guessed: "$1.2M" and "$950k" are different widths, and a
+    // fixed gutter would clip one or waste space on the other.
+    var gutter = 0.0;
+    for (final l in labels.values) {
+      if (l.width > gutter) gutter = l.width;
+    }
+    if (gutter > 0) gutter += _axisGap;
+
+    final plotWidth = size.width - gutter;
+    final plotHeight = _height - _padding * 2;
+    if (plotWidth <= 0) return;
+
+    double x(int i) => gutter + plotWidth * i / (points.length - 1);
     double y(double value) =>
         _padding + plotHeight - (value / maxValue) * plotHeight;
 
@@ -258,10 +299,16 @@ class _ProjectionPainter extends CustomPainter {
     final grid = Paint()
       ..strokeWidth = 1
       ..color = gridColor;
-    for (var i = 0; i <= 4; i++) {
-      final gy = _padding + plotHeight * i / 4;
-      canvas.drawLine(Offset(0, gy), Offset(size.width, gy), grid);
+    for (final tick in ticks) {
+      final gy = y(tick);
+      canvas.drawLine(Offset(gutter, gy), Offset(size.width, gy), grid);
+      labels[tick]!.paint(
+        canvas,
+        Offset(gutter - _axisGap - labels[tick]!.width, gy - axisLabelSize),
+      );
     }
+
+    _paintYears(canvas, size, x, plotWidth);
 
     for (var i = 0; i < _series.length; i++) {
       _line(canvas, x, y, _series[i].of, colors[i]);
@@ -272,7 +319,7 @@ class _ProjectionPainter extends CustomPainter {
       final mx = x(marker);
       canvas.drawLine(
         Offset(mx, 0),
-        Offset(mx, size.height),
+        Offset(mx, _height),
         Paint()
           ..strokeWidth = 1
           ..color = ruleColor,
@@ -284,6 +331,43 @@ class _ProjectionPainter extends CustomPainter {
         canvas.drawCircle(dot, 5, Paint()..color = surface);
         canvas.drawCircle(dot, 3.5, Paint()..color = colors[i]);
       }
+    }
+  }
+
+  /// Year labels under the plot, at a spacing the width can hold.
+  ///
+  /// Every fifth year where they fit, then every tenth, and so on — a label
+  /// per year on a twenty-year projection would overlap into a smear, which
+  /// is worse than no axis at all.
+  void _paintYears(
+    Canvas canvas,
+    Size size,
+    double Function(int) x,
+    double plotWidth,
+  ) {
+    final years = (points.length - 1) ~/ 12;
+    if (years <= 0) return;
+
+    final sample = _label('$years');
+    // Each label needs its own width plus a gap; the step is the first of
+    // 1, 2, 5, 10, 20… that clears it. Measured against the plot rather than
+    // the whole canvas, since the gutter is not somewhere labels can go.
+    final room = plotWidth / (sample.width + 14);
+    var step = 1;
+    for (final candidate in [1, 2, 5, 10, 20, 25, 50]) {
+      step = candidate;
+      if (years / candidate <= room) break;
+    }
+
+    for (var year = 0; year <= years; year += step) {
+      final label = _label(year == 0 ? 'now' : '$year');
+      // Centred on its year, then pulled back inside the canvas at either
+      // end — the first would otherwise sit under the y-axis labels and the
+      // last would hang off the right edge.
+      var left = x(year * 12) - label.width / 2;
+      if (left + label.width > size.width) left = size.width - label.width;
+      if (left < 0) left = 0;
+      label.paint(canvas, Offset(left, _height + 2));
     }
   }
 

@@ -306,6 +306,15 @@ where height is the value and the eye can rank them. Nothing is lost — the tot
 is the headline figure above the plot, which is where it was being read from
 anyway.
 
+**Both axes are labelled.** Money runs up the left at round values — 250k, 500k,
+750k — chosen with the same tick logic the price chart uses, rather than at even
+fractions of the data's own maximum, which would read 308k, 616k, 925k and be
+no use to anyone. The gutter is measured from the widest label, because "$1.2M"
+and "$950k" are different widths and a fixed one would clip the first or waste
+space on the second. Years run along the bottom, thinned to every second,
+fifth or tenth as the width demands — a label per year on a twenty-year
+projection is a smear, which is worse than no axis at all.
+
 The legend carries each line's value at the point being scrubbed, rounded to fit
 (`$341k`), so the lines can be ranked without measuring them against the
 gridlines; the exact figures are listed in full directly below. It is always

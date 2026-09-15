@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/types.dart';
 import '../theme/app_theme.dart';
+import '../utils/chart.dart';
 import '../utils/indicators.dart';
-import 'price_chart.dart' show axisLabelSize;
 
 const _paneHeight = 64.0;
 

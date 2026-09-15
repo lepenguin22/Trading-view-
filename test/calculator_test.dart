@@ -401,6 +401,29 @@ void main() {
     expect(find.textContaining('runs past 55'), findsNothing);
   });
 
+  testWidgets('the chart reserves room under the plot for year labels', (
+    tester,
+  ) async {
+    // The axis labels are painted on the canvas, so they cannot be found the
+    // way a widget can. What is checkable is that the canvas is taller than
+    // the plot: without the reserved strip the year labels would be drawn
+    // outside it and clipped away silently.
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '4300');
+    await type(tester, 'Years', '20');
+
+    final canvas = tester.widget<CustomPaint>(
+      find
+          .descendant(
+            of: find.byType(ProjectionChart),
+            matching: find.byType(CustomPaint),
+          )
+          .first,
+    );
+
+    expect(canvas.size.height, greaterThan(200));
+  });
+
   testWidgets('inputs survive leaving and returning', (tester) async {
     await open(tester);
     await type(tester, 'Gross monthly salary', '4300');
