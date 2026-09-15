@@ -74,6 +74,15 @@ void main() {
       .ancestor(of: find.text('Projection'), matching: find.byType(Column))
       .first;
 
+  /// The card holding the CPF split. "MediSave" is an exact label in both this
+  /// card and the summary above, so assertions about one must say which.
+  Finder splitCard() => find
+      .ancestor(
+        of: find.text('CPF — how it is split'),
+        matching: find.byType(Column),
+      )
+      .first;
+
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   testWidgets('take-home follows gross and the CPF percentage', (tester) async {
@@ -302,6 +311,73 @@ void main() {
     );
     expect(_thousands(sa) * 1000, closeTo(exactSa, 1000));
     expect(_thousands(sa) * 1000, lessThan(exact));
+  });
+
+  testWidgets('an age replaces the share fields with its band', (tester) async {
+    await open(tester);
+
+    // Blank age: the shares are typed in.
+    expect(find.widgetWithText(TextField, 'Ordinary share of wage'), findsOne);
+
+    await type(tester, 'Your age (blank to set the shares yourself)', '40');
+
+    // With an age they become a read-out of the band it resolves to.
+    expect(
+      find.widgetWithText(TextField, 'Ordinary share of wage'),
+      findsNothing,
+    );
+    expect(valueFor(tester, 'Band', within: splitCard()), 'above 35 to 45');
+    expect(valueFor(tester, 'Ordinary', within: splitCard()), '21% of wage');
+    expect(valueFor(tester, 'Special', within: splitCard()), '7% of wage');
+    expect(valueFor(tester, 'MediSave', within: splitCard()), '9% of wage');
+    expect(valueFor(tester, 'Into CPF each month'), '37% of wage');
+  });
+
+  testWidgets('clearing the age hands the shares back', (tester) async {
+    // The table is a convenience, not a lock: if it goes stale the shares must
+    // still be typeable, which is the whole reason a blank age means manual.
+    await open(tester);
+    await type(tester, 'Your age (blank to set the shares yourself)', '40');
+    expect(
+      find.widgetWithText(TextField, 'Ordinary share of wage'),
+      findsNothing,
+    );
+
+    await type(tester, 'Your age (blank to set the shares yourself)', '');
+    expect(find.widgetWithText(TextField, 'Ordinary share of wage'), findsOne);
+  });
+
+  testWidgets('an age changes what the projection holds', (tester) async {
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '10000');
+    await type(tester, 'Years', '1');
+    await type(tester, 'Your age (blank to set the shares yourself)', '30');
+    final young = valueFor(tester, 'Ordinary Account', within: projection());
+
+    // Older band, smaller Ordinary share, so less lands there.
+    await type(tester, 'Your age (blank to set the shares yourself)', '53');
+    final older = valueFor(tester, 'Ordinary Account', within: projection());
+
+    expect(_money(older), lessThan(_money(young)));
+    expect(valueFor(tester, 'Band', within: splitCard()), 'above 50 to 55');
+  });
+
+  testWidgets('a projection running past 55 says the table stops', (
+    tester,
+  ) async {
+    await open(tester);
+    await type(tester, 'Your age (blank to set the shares yourself)', '30');
+    await type(tester, 'Years', '20');
+    expect(find.textContaining('runs past 55'), findsNothing);
+
+    // Past 55 the Special Account closes and the rate falls; neither is
+    // modelled, so the screen says so rather than projecting through it.
+    await type(tester, 'Years', '30');
+    expect(find.textContaining('runs past 55'), findsOneWidget);
+
+    // And nothing is claimed when the shares are typed in by hand.
+    await type(tester, 'Your age (blank to set the shares yourself)', '');
+    expect(find.textContaining('runs past 55'), findsNothing);
   });
 
   testWidgets('inputs survive leaving and returning', (tester) async {

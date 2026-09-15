@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../state/storage.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
+import '../utils/cpf_allocation.dart';
 import '../utils/projection.dart';
 import '../widgets/projection_chart.dart';
 
@@ -18,6 +19,7 @@ const _kStartInvestments = 'startInvestments';
 const _kStartOa = 'startOa';
 const _kStartSa = 'startSa';
 const _kStartMa = 'startMa';
+const _kAge = 'age';
 const _kOaPercent = 'oaPercent';
 const _kSaPercent = 'saPercent';
 const _kMaPercent = 'maPercent';
@@ -57,6 +59,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _kStartOa: 0,
     _kStartSa: 0,
     _kStartMa: 0,
+    _kAge: 0,
     _kOaPercent: 23,
     _kSaPercent: 6,
     _kMaPercent: 8,
@@ -120,6 +123,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       startingOa: _value(_kStartOa),
       startingSa: _value(_kStartSa),
       startingMa: _value(_kStartMa),
+      currentAge: _value(_kAge).round().clamp(0, 100),
       oaPercent: _value(_kOaPercent),
       saPercent: _value(_kSaPercent),
       maPercent: _value(_kMaPercent),
@@ -152,6 +156,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     }
 
     final input = _input;
+    final byAge = input.currentAge > 0;
+    final share = input.allocationAt(0);
     final points = project(input);
     final summary = ProjectionSummary.of(points, input);
 
@@ -262,20 +268,51 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             _field(_kMonthlyInvestment, 'Monthly investment'),
             _field(_kInvestReturn, 'Expected annual return', suffix: '%'),
           ]),
-          _card('CPF — Ordinary Account', [
-            _field(_kStartOa, 'Balance today'),
-            _field(_kOaPercent, 'Share of wage', suffix: '%'),
-            _field(_kOaReturn, 'Interest rate', suffix: '%'),
-          ]),
-          _card('CPF — Special Account', [
-            _field(_kStartSa, 'Balance today'),
-            _field(_kSaPercent, 'Share of wage', suffix: '%'),
-            _field(_kSaReturn, 'Interest rate', suffix: '%'),
-          ]),
-          _card('CPF — MediSave', [
-            _field(_kStartMa, 'Balance today'),
-            _field(_kMaPercent, 'Share of wage', suffix: '%'),
-            _field(_kMaReturn, 'Interest rate', suffix: '%'),
+          _card('CPF — how it is split', [
+            _field(
+              _kAge,
+              'Your age (blank to set the shares yourself)',
+              hint: 'e.g. 30',
+            ),
+            const SizedBox(height: 6),
+            if (byAge) ...[
+              _row('Band', cpfBandLabel(input.currentAge)),
+              _row('Ordinary', '${_trim(share.oa)}% of wage'),
+              _row('Special', '${_trim(share.sa)}% of wage'),
+              _row('MediSave', '${_trim(share.ma)}% of wage'),
+              const SizedBox(height: 6),
+              Text(
+                'The split follows your age and keeps following it as the '
+                'projection runs — at 34 today, a twenty-year projection '
+                'spends time in three bands, and holding the first for all '
+                'twenty would overstate the Ordinary Account for most of it.'
+                '\n\nFigures are percentages of wage for private-sector '
+                'employees above \$750 a month, effective 1 January 2026. '
+                'Allocation moves; clear the age to type the shares in '
+                'yourself if this table has gone stale.',
+                style: TextStyle(
+                  color: c.textFaint,
+                  fontSize: 12.5,
+                  height: 1.45,
+                ),
+              ),
+              if (input.outgrowsAllocationTable) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'This projection runs past 55, where CPF stops working the '
+                  'way this models it: the Special Account closes, '
+                  'contributions go to a Retirement Account up to the Full '
+                  'Retirement Sum, and the total rate falls below 37%. Years '
+                  'past 55 are carried on the 50-to-55 split and are an '
+                  'approximation, not a projection.',
+                  style: TextStyle(color: c.down, fontSize: 12.5, height: 1.4),
+                ),
+              ],
+            ] else ...[
+              _field(_kOaPercent, 'Ordinary share of wage', suffix: '%'),
+              _field(_kSaPercent, 'Special share of wage', suffix: '%'),
+              _field(_kMaPercent, 'MediSave share of wage', suffix: '%'),
+            ],
             const SizedBox(height: 6),
             _row('Into CPF each month', '${_trim(input.cpfPercent)}% of wage'),
             // Derived rather than asked for: what lands in CPF that did not
@@ -303,14 +340,30 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               'rate hides which pot is doing the work.\n\n'
               'Shares are percentages of your wage, the form CPF publishes '
               'its allocation tables in, so a rate looked up there goes in as '
-              'written. They change with age — nothing here assumes one, or a '
-              'rate, or a ceiling.',
+              'written.\n\n'
+              'The allocation table is the only CPF policy this app carries a '
+              'number for, and only when you give it an age. Interest rates, '
+              'your contribution rate and the wage ceiling stay yours to set: '
+              'all three have moved in recent years, and a calculator quietly '
+              'using a stale figure is worse than one that asks.',
               style: TextStyle(
                 color: c.textFaint,
                 fontSize: 12.5,
                 height: 1.45,
               ),
             ),
+          ]),
+          _card('CPF — Ordinary Account', [
+            _field(_kStartOa, 'Balance today'),
+            _field(_kOaReturn, 'Interest rate', suffix: '%'),
+          ]),
+          _card('CPF — Special Account', [
+            _field(_kStartSa, 'Balance today'),
+            _field(_kSaReturn, 'Interest rate', suffix: '%'),
+          ]),
+          _card('CPF — MediSave', [
+            _field(_kStartMa, 'Balance today'),
+            _field(_kMaReturn, 'Interest rate', suffix: '%'),
           ]),
           _card('Horizon', [_field(_kYears, 'Years')]),
           const SizedBox(height: 8),

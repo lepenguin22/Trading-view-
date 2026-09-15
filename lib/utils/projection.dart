@@ -6,6 +6,8 @@
 /// one that asks. What this does is the arithmetic.
 library;
 
+import 'cpf_allocation.dart';
+
 /// One month of a projection.
 class ProjectionPoint {
   const ProjectionPoint({
@@ -65,6 +67,7 @@ class ProjectionInput {
     this.startingOa = 0,
     this.startingSa = 0,
     this.startingMa = 0,
+    this.currentAge = 0,
     this.oaPercent = 23,
     this.saPercent = 6,
     this.maPercent = 8,
@@ -106,9 +109,21 @@ class ProjectionInput {
   final double startingSa;
   final double startingMa;
 
+  /// Age today, or 0 when it was not given.
+  ///
+  /// When set, it decides the allocation instead of the three percentages
+  /// below, and keeps deciding it as the projection runs: someone 34 today
+  /// spends part of a twenty-year projection in each of three bands, and
+  /// holding their first band for all twenty years would overstate the
+  /// Ordinary Account for most of it.
+  final int currentAge;
+
   /// Where each month's CPF lands, as a percentage of the wage — the form
   /// CPF publishes its allocation tables in, so a rate looked up there can be
   /// typed in as written.
+  ///
+  /// Used only when [currentAge] is 0. Leaving the age blank is how someone
+  /// with an arrangement the table does not describe keeps control of it.
   ///
   /// These three decide the contribution; [employeeCpfPercent] only decides
   /// how much of it comes out of take-home pay. The rest is the employer's,
@@ -117,6 +132,22 @@ class ProjectionInput {
   final double oaPercent;
   final double saPercent;
   final double maPercent;
+
+  /// The split in force at [month] of the projection.
+  ///
+  /// Whole years: a band changes on a birthday, and a projection that models
+  /// the month CPF actually switches would be claiming a precision the rest of
+  /// this does not have.
+  CpfAllocation allocationAt(int month) {
+    if (currentAge <= 0) {
+      return (oa: oaPercent, sa: saPercent, ma: maPercent);
+    }
+    return cpfAllocationFor(currentAge + month ~/ 12);
+  }
+
+  /// True when the projection reaches an age the allocation table stops at.
+  bool get outgrowsAllocationTable =>
+      projectionPassesCoveredAges(currentAge, years);
 
   /// Annual nominal returns, compounded monthly.
   final double investmentReturnPercent;
@@ -152,8 +183,12 @@ class ProjectionInput {
   bool get outgoingsExceedTakeHome =>
       grossMonthlySalary > 0 && monthlyExpenses + monthlyInvestment > takeHome;
 
-  /// Everything reaching CPF each month, as a percentage of the wage.
-  double get cpfPercent => oaPercent + saPercent + maPercent;
+  /// Everything reaching CPF each month, as a percentage of the wage, at the
+  /// start of the projection.
+  double get cpfPercent {
+    final a = allocationAt(0);
+    return a.oa + a.sa + a.ma;
+  }
 
   /// The employer's share, as a percentage of the wage.
   ///
@@ -194,9 +229,6 @@ List<ProjectionPoint> project(ProjectionInput input) {
   final monthlyOaRate = _fraction(input.oaReturnPercent) / 12;
   final monthlySaRate = _fraction(input.saReturnPercent) / 12;
   final monthlyMaRate = _fraction(input.maReturnPercent) / 12;
-  final oaRate = _fraction(input.oaPercent);
-  final saRate = _fraction(input.saPercent);
-  final maRate = _fraction(input.maPercent);
 
   final out = <ProjectionPoint>[
     ProjectionPoint(
@@ -223,10 +255,12 @@ List<ProjectionPoint> project(ProjectionInput input) {
         ? salary
         : (salary < input.cpfSalaryCeiling! ? salary : input.cpfSalaryCeiling!);
     // Each account takes its own share of the wage, so the split is exact
-    // rather than a proportion of a rounded total.
-    final toOa = eligible * oaRate;
-    final toSa = eligible * saRate;
-    final toMa = eligible * maRate;
+    // rather than a proportion of a rounded total. Read per month, because an
+    // age-driven split changes underneath the projection as it runs.
+    final share = input.allocationAt(month - 1);
+    final toOa = eligible * _fraction(share.oa);
+    final toSa = eligible * _fraction(share.sa);
+    final toMa = eligible * _fraction(share.ma);
 
     invested = invested * (1 + monthlyInvestmentRate) + input.monthlyInvestment;
     oa = oa * (1 + monthlyOaRate) + toOa;
