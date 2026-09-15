@@ -437,6 +437,17 @@ would compound that gap for every year of the projection.
 Give an age and a horizon that reaches 55, and the calculator says whether the
 projection clears the Basic, Full or Enhanced Retirement Sum.
 
+**The verdict is in the summary at the top**, not only in its own card. That
+card is eighth of nine, past four CPF cards, and a reader who never scrolls
+that far reads its absence as "nothing to say" rather than "further down" — so
+the top line names the highest sum cleared and what is missing from the next.
+
+**The default horizon does not reach 55 for the people this is for.** Twenty
+years from 28 ends at 48, and the sums cannot be measured at all. Rather than
+showing nothing, both the summary and the card say how many more years are
+needed — the field that fixes it sits *below* the message, so leaving the
+reader to work it out would be doubly unhelpful.
+
 Three things make this easy to get wrong, and all three are handled rather than
 left to the reader:
 

@@ -463,11 +463,41 @@ void main() {
     await type(tester, 'Your age (blank to set the shares yourself)', '30');
     await type(tester, 'Years', '5');
 
-    // An absent card would read as "you are fine".
-    expect(find.textContaining('stops before 55'), findsOneWidget);
+    // An absent card would read as "you are fine". It also names the horizon
+    // that would answer the question, since the field to change it sits in a
+    // card below this message.
+    expect(find.textContaining('measured at 55'), findsOneWidget);
+    expect(find.textContaining('Set the horizon to 25 years'), findsOneWidget);
+    expect(find.textContaining('20 more than now'), findsOneWidget);
+
+    // And the summary at the top says it too, because a reader who never
+    // scrolls this far would otherwise see nothing at all.
+    expect(
+      valueFor(tester, 'Retirement sums', within: projection()),
+      '20 more years to reach 55',
+    );
 
     await type(tester, 'Years', '30');
-    expect(find.textContaining('stops before 55'), findsNothing);
+    expect(find.textContaining('measured at 55'), findsNothing);
+  });
+
+  testWidgets('the summary at the top says which sum is cleared', (
+    tester,
+  ) async {
+    // The default twenty-year horizon stops before 55 for anyone under 35,
+    // which is exactly who this is for — so the verdict has to be reachable
+    // without scrolling past four CPF cards to find it.
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '10000');
+    await type(tester, 'Your age (blank to set the shares yourself)', '50');
+    await type(tester, 'Years', '10');
+
+    final verdict = valueFor(tester, 'At 55', within: projection());
+    expect(
+      verdict,
+      anyOf(startsWith('clears'), equals('under Basic')),
+      reason: 'the top summary must state where the projection stands',
+    );
   });
 
   testWidgets('no age means no retirement claim at all', (tester) async {
