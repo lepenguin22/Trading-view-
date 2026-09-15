@@ -295,18 +295,27 @@ have no count until the sheet is imported again.
 ## The calculator
 
 Under the overflow menu. It projects two pots forward month by month and
-charts them stacked: **CPF's three accounts** underneath, because they happen
-out of salary whatever else is decided, and **investments** on top, because that
-is what the plan adds. Within CPF the order is Ordinary, Special, MediSave — the
-order of the allocation tables, and of how freely the money can be used.
+charts them as **four lines from a shared zero** — the three CPF accounts and
+investments.
+
+**Unstacked, and that is the point.** They were stacked, which made every line a
+running total: the Special Account, a third the size of the Ordinary Account,
+drew its line *above* it. The value was the thickness of the band, and nobody
+reads a chart that way. Four pots meant to be compared need a common baseline,
+where height is the value and the eye can rank them. Nothing is lost — the total
+is the headline figure above the plot, which is where it was being read from
+anyway.
+
+The legend carries each line's value at the point being scrubbed, rounded to fit
+(`$341k`), so the lines can be ranked without measuring them against the
+gridlines; the exact figures are listed in full directly below. It is always
+present and wraps rather than being cut off, so identity is never carried by
+colour alone.
 
 The four series use their own validated colour set rather than borrowing the
-moving-average one: four series need an order checked as four, and the stacking
-order decides which pairs sit against each other. Run through the palette
-validator in both themes — worst adjacent pair ΔE 13.8 protan in light and 14.0
-in dark, against a target of 8. The legend names every band and wraps to two
-rows on a narrow phone rather than being cut off, so identity is never carried
-by colour alone.
+moving-average one: four series need an order checked as four. Run through the
+palette validator in both themes — worst adjacent pair ΔE 13.8 protan in light
+and 14.0 in dark, against a target of 8.
 
 Salary drives both. Gross less your CPF percentage gives take-home, and the
 month is then written out as the subtraction it is:

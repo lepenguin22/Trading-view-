@@ -134,4 +134,28 @@ void main() {
       expect(formatValue(460, 'USD'), '\$460.00');
     });
   });
+
+  group('formatCompactValue', () {
+    test('shortens to a width a legend can hold', () {
+      expect(formatCompactValue(632204, 'USD'), r'$632k');
+      expect(formatCompactValue(1233520, 'USD'), r'$1.2M');
+      expect(formatCompactValue(9870, 'USD'), r'$9.9k');
+      expect(formatCompactValue(9800, 'USD'), r'$9.8k');
+      expect(formatCompactValue(632, 'USD'), r'$632');
+      expect(formatCompactValue(0, 'USD'), r'$0');
+    });
+
+    test('a decimal only where it says something', () {
+      // 1.2M separates two projections; 632.2k does not, and costs the room
+      // that made the legend wrap.
+      expect(formatCompactValue(1250000, 'USD'), r'$1.3M');
+      expect(formatCompactValue(340511, 'USD'), r'$341k');
+    });
+
+    test('carries a sign and refuses what is not a number', () {
+      expect(formatCompactValue(-4200, 'USD'), '\u2212\$4.2k');
+      expect(formatCompactValue(double.nan, 'USD'), '—');
+      expect(formatCompactValue(double.infinity, 'USD'), '—');
+    });
+  });
 }

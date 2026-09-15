@@ -65,6 +65,35 @@ String formatValue(double value, [String currency = 'USD']) {
   return text.replaceFirst('-', '\u2212');
 }
 
+/// A money amount shortened to fit somewhere narrow, e.g. "$632k", "$1.2M".
+///
+/// For a chart legend, where four of these sit beside their labels and the
+/// exact figures are listed in full directly below. Rounded on purpose: the
+/// legend is for ranking the lines against each other, and cents on a
+/// six-figure projection are noise that costs a row of wrapping.
+String formatCompactValue(double value, [String currency = 'USD']) {
+  if (!value.isFinite) return '—';
+
+  final minor = _minorUnitCurrencies[currency];
+  final amount = minor != null ? value / minor.divisor : value;
+  final code = minor != null ? minor.major : currency;
+  final symbol = NumberFormat.simpleCurrency(name: code).currencySymbol;
+
+  final sign = amount < 0 ? '−' : '';
+  final size = amount.abs();
+
+  final (scaled, suffix) = switch (size) {
+    >= 1000000 => (size / 1000000, 'M'),
+    >= 1000 => (size / 1000, 'k'),
+    _ => (size, ''),
+  };
+  // One decimal only while it still says something: 1.2M distinguishes two
+  // projections, 632.2k does not.
+  final digits = suffix.isEmpty || scaled >= 100 ? 0 : 1;
+
+  return '$sign$symbol${scaled.toStringAsFixed(digits)}$suffix';
+}
+
 /// Formats a signed money amount, e.g. a day change in a portfolio's currency.
 String formatSignedValue(double value, [String currency = 'USD']) {
   if (!value.isFinite) return '—';

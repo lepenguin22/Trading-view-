@@ -41,6 +41,10 @@ void main() {
   /// summary row, a card title and the chart's legend key — so the search
   /// takes the first row that actually carries a value beside the label,
   /// rather than the first row containing the word.
+  ///
+  /// Rows inside the chart are skipped. Its legend names the same accounts as
+  /// the summary and carries the same figures rounded to fit, so without this
+  /// the assertions would silently land on "$9.8k" instead of "$9,777.96".
   String valueFor(WidgetTester tester, String label, {Finder? within}) {
     final labelFinder = within == null
         ? find.text(label)
@@ -48,6 +52,11 @@ void main() {
     final rows = find.ancestor(of: labelFinder, matching: find.byType(Row));
 
     for (var i = 0; i < tester.widgetList(rows).length; i++) {
+      final inChart = find.ancestor(
+        of: rows.at(i),
+        matching: find.byType(ProjectionChart),
+      );
+      if (tester.widgetList(inChart).isNotEmpty) continue;
       final texts = tester
           .widgetList<Text>(
             find.descendant(of: rows.at(i), matching: find.byType(Text)),
@@ -241,6 +250,60 @@ void main() {
     }
   });
 
+  testWidgets('a smaller account never reads as the larger one', (
+    tester,
+  ) async {
+    // The bug this replaces: the chart stacked the pots, so every line was a
+    // running total and the Special Account — a third the size of the
+    // Ordinary Account — drew *above* it. The legend now carries each line's
+    // own value, which is what the lines are drawn from.
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '4300');
+    await type(tester, 'Years', '20');
+
+    final chart = find.byType(ProjectionChart);
+    String legend(String label) {
+      final row = find
+          .ancestor(
+            of: find.descendant(of: chart, matching: find.text(label)),
+            matching: find.byType(Row),
+          )
+          .first;
+      final texts = tester
+          .widgetList<Text>(
+            find.descendant(of: row, matching: find.byType(Text)),
+          )
+          .map((t) => t.data)
+          .whereType<String>()
+          .toList();
+      return texts.last;
+    }
+
+    // 23% of wage into Ordinary against 6% into Special: Ordinary must be the
+    // larger figure, and the legend must say so.
+    final oa = legend('Ordinary');
+    final sa = legend('Special');
+    expect(oa, isNot(sa));
+    expect(_thousands(oa), greaterThan(_thousands(sa)));
+
+    // And neither is a running total: the summary below lists the same
+    // account values, so the two must agree — within the rounding the legend
+    // does to fit, which is why this compares numbers rather than strings.
+    final exact = _money(
+      valueFor(tester, 'Ordinary Account', within: projection()),
+    );
+    expect(_thousands(oa) * 1000, closeTo(exact, 1000));
+
+    // The stacked chart's Ordinary line sat at the account's own value, so
+    // only the accounts above it exposed the bug. Special must be nowhere
+    // near Ordinary + Special, which is where its line used to be drawn.
+    final exactSa = _money(
+      valueFor(tester, 'Special Account', within: projection()),
+    );
+    expect(_thousands(sa) * 1000, closeTo(exactSa, 1000));
+    expect(_thousands(sa) * 1000, lessThan(exact));
+  });
+
   testWidgets('inputs survive leaving and returning', (tester) async {
     await open(tester);
     await type(tester, 'Gross monthly salary', '4300');
@@ -278,3 +341,11 @@ void main() {
     expect(find.text('In 20 years'), findsOneWidget);
   });
 }
+
+/// Reads "$341k" back to 341, so two legend figures can be ranked.
+double _thousands(String compact) =>
+    double.parse(compact.replaceAll(RegExp(r'[^0-9.]'), ''));
+
+/// Reads "$307,553.99" back to a number.
+double _money(String formatted) =>
+    double.parse(formatted.replaceAll(RegExp(r'[^0-9.]'), ''));

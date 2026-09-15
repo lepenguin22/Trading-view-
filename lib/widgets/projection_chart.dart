@@ -7,17 +7,17 @@ import '../utils/projection.dart';
 const _height = 200.0;
 const _padding = 8.0;
 
-/// A stacked area of the four pots over the projection.
+/// One line per pot over the projection, each from a common zero.
 ///
-/// Stacked rather than four lines: the pots sum to a total, and the total is
-/// the number the projection is for. Separate lines would show each pot but
-/// leave the reader adding them by eye.
+/// Unstacked, and that is the point. Stacked, every line is a running total,
+/// so a small account sitting on a large one draws *higher* than the large
+/// one — the Special Account, a third the size of the Ordinary Account, had
+/// its line above it. Band thickness carried the value and nobody reads a
+/// chart that way. Four pots that are meant to be compared want a shared
+/// baseline, where height is the value and the eye can rank them.
 ///
-/// CPF's three accounts sit underneath because they are the part that is not
-/// chosen — they happen out of salary whatever else is decided — so the
-/// investing band reads as what the plan adds on top. Within CPF the order is
-/// Ordinary, Special, MediSave: the order of the allocation tables, and of how
-/// freely the money can be used.
+/// The total is not lost by unstacking: it is the headline figure above the
+/// plot, which is where it was actually being read from anyway.
 class ProjectionChart extends StatefulWidget {
   const ProjectionChart({
     super.key,
@@ -76,8 +76,8 @@ class _ProjectionChartState extends State<ProjectionChart> {
               child: Semantics(
                 label:
                     'Projection chart. Ordinary Account, Special Account, '
-                    'MediSave and investments stacked over '
-                    '${(points.length - 1) ~/ 12} years, ending at '
+                    'MediSave and investments, each plotted over '
+                    '${(points.length - 1) ~/ 12} years. Together they end at '
                     '${formatValue(points.last.total, widget.currency)}.',
                 excludeSemantics: true,
                 child: CustomPaint(
@@ -95,19 +95,25 @@ class _ProjectionChartState extends State<ProjectionChart> {
             );
           },
         ),
-        const SizedBox(height: 8),
-        // A legend is always present, so identity is never carried by colour
-        // alone. Top of the stack first, matching the order they are read off
-        // the chart. It wraps rather than ellipsising: four keys do not fit a
-        // narrow phone on one line, and a cut-off legend is worse than two.
+        const SizedBox(height: 10),
+        // The legend carries each line's value at the scrubbed point, so the
+        // lines can be ranked without measuring them against the gridlines.
+        // It is always present, so identity is never colour alone, and it
+        // wraps rather than ellipsising — four keys do not fit one line on a
+        // narrow phone, and a cut-off legend is worse than two rows.
         Wrap(
-          spacing: 14,
+          spacing: 16,
           runSpacing: 6,
           children: [
-            _Key(color: c.pots[3], label: 'Investments'),
-            _Key(color: c.pots[2], label: 'MediSave'),
-            _Key(color: c.pots[1], label: 'Special'),
-            _Key(color: c.pots[0], label: 'Ordinary'),
+            for (var i = _series.length - 1; i >= 0; i--)
+              _Key(
+                color: c.pots[i],
+                label: _series[i].label,
+                value: formatCompactValue(
+                  _series[i].of(selected),
+                  widget.currency,
+                ),
+              ),
           ],
         ),
       ],
@@ -161,10 +167,11 @@ class _Readout extends StatelessWidget {
 }
 
 class _Key extends StatelessWidget {
-  const _Key({required this.color, required this.label});
+  const _Key({required this.color, required this.label, required this.value});
 
   final Color color;
   final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
@@ -183,10 +190,32 @@ class _Key extends StatelessWidget {
         const SizedBox(width: 5),
         // Text stays in ink; the swatch beside it carries the identity.
         Text(label, style: TextStyle(color: c.textMuted, fontSize: 12)),
+        const SizedBox(width: 5),
+        Text(
+          value,
+          style: tabularFigures.copyWith(
+            color: c.text,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
     );
   }
 }
+
+/// The four pots, in the order they are drawn and listed.
+const _series = <({String label, double Function(ProjectionPoint) of})>[
+  (label: 'Ordinary', of: _oa),
+  (label: 'Special', of: _sa),
+  (label: 'MediSave', of: _ma),
+  (label: 'Investments', of: _invested),
+];
+
+double _oa(ProjectionPoint p) => p.oa;
+double _sa(ProjectionPoint p) => p.sa;
+double _ma(ProjectionPoint p) => p.ma;
+double _invested(ProjectionPoint p) => p.invested;
 
 class _ProjectionPainter extends CustomPainter {
   const _ProjectionPainter({
@@ -200,35 +229,30 @@ class _ProjectionPainter extends CustomPainter {
 
   final List<ProjectionPoint> points;
 
-  /// Bottom to top: Ordinary, Special, MediSave, investments.
+  /// One per entry in [_series], in the same order.
   final List<Color> colors;
   final Color gridColor;
   final Color ruleColor;
   final Color surface;
   final int? scrubbed;
 
-  /// Each band's upper edge, as a running total. Stacking is done here rather
-  /// than in the model: the model holds balances, and what they add up to is a
-  /// question this chart asks, not a fact about the money.
-  static final _levels = <double Function(ProjectionPoint)>[
-    (p) => p.oa,
-    (p) => p.oa + p.sa,
-    (p) => p.oa + p.sa + p.ma,
-    (p) => p.total,
-  ];
-
   @override
   void paint(Canvas canvas, Size size) {
-    final maxTotal = points.fold<double>(
-      0,
-      (m, p) => p.total > m ? p.total : m,
-    );
-    if (maxTotal <= 0) return;
+    // The scale is the largest single pot, not the sum: nothing is stacked, so
+    // scaling to a total nobody plots would flatten every line into the floor.
+    var maxValue = 0.0;
+    for (final p in points) {
+      for (final s in _series) {
+        final v = s.of(p);
+        if (v > maxValue) maxValue = v;
+      }
+    }
+    if (maxValue <= 0) return;
 
     final plotHeight = size.height - _padding * 2;
     double x(int i) => size.width * i / (points.length - 1);
     double y(double value) =>
-        _padding + plotHeight - (value / maxTotal) * plotHeight;
+        _padding + plotHeight - (value / maxValue) * plotHeight;
 
     // Recessive gridlines: reference, not content.
     final grid = Paint()
@@ -239,17 +263,8 @@ class _ProjectionPainter extends CustomPainter {
       canvas.drawLine(Offset(0, gy), Offset(size.width, gy), grid);
     }
 
-    // Painted bottom upwards, each band cut away from the one below it.
-    for (var band = 0; band < _levels.length; band++) {
-      _fill(
-        canvas,
-        size,
-        x,
-        y,
-        _levels[band],
-        band == 0 ? null : _levels[band - 1],
-        colors[band],
-      );
+    for (var i = 0; i < _series.length; i++) {
+      _line(canvas, x, y, _series[i].of, colors[i]);
     }
 
     final marker = scrubbed;
@@ -262,45 +277,27 @@ class _ProjectionPainter extends CustomPainter {
           ..strokeWidth = 1
           ..color = ruleColor,
       );
-      // A surface ring keeps the dot legible over any band.
-      final dot = Offset(mx, y(points[marker].total));
-      canvas.drawCircle(dot, 5, Paint()..color = surface);
-      canvas.drawCircle(dot, 3.5, Paint()..color = colors.last);
+      // A dot on every line, since every line is now being read. The surface
+      // ring keeps one legible where two lines cross.
+      for (var i = 0; i < _series.length; i++) {
+        final dot = Offset(mx, y(_series[i].of(points[marker])));
+        canvas.drawCircle(dot, 5, Paint()..color = surface);
+        canvas.drawCircle(dot, 3.5, Paint()..color = colors[i]);
+      }
     }
   }
 
-  /// Fills between [below] and [top], and strokes the top edge.
-  ///
-  /// The lower boundary is lifted 2px so stacked segments carry a surface gap
-  /// between them; without it the whole stack reads as one shape.
-  void _fill(
+  void _line(
     Canvas canvas,
-    Size size,
     double Function(int) x,
     double Function(double) y,
-    double Function(ProjectionPoint) top,
-    double Function(ProjectionPoint)? below,
+    double Function(ProjectionPoint) value,
     Color color,
   ) {
-    final path = Path()..moveTo(x(0), y(top(points.first)));
+    final path = Path()..moveTo(x(0), y(value(points.first)));
     for (var i = 1; i < points.length; i++) {
-      path.lineTo(x(i), y(top(points[i])));
+      path.lineTo(x(i), y(value(points[i])));
     }
-
-    final area = Path.from(path);
-    if (below == null) {
-      area
-        ..lineTo(x(points.length - 1), size.height)
-        ..lineTo(x(0), size.height)
-        ..close();
-    } else {
-      for (var i = points.length - 1; i >= 0; i--) {
-        area.lineTo(x(i), y(below(points[i])) - 2);
-      }
-      area.close();
-    }
-
-    canvas.drawPath(area, Paint()..color = color.withValues(alpha: 0.22));
     canvas.drawPath(
       path,
       Paint()
