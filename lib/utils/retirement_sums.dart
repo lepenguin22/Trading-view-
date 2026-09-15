@@ -33,8 +33,19 @@ const brsBaseAmount = 110200.0;
 /// unsaid, since anyone under about 50 is projecting into unannounced years.
 const lastAnnouncedCohort = 2027;
 
-/// Default annual rise, from the announced 2023-2027 schedule.
+/// Default annual rise, from the announced 2023-to-2027 schedule.
 const brsGrowthPercentDefault = 3.5;
+
+/// The first cohort whose Enhanced Retirement Sum is four times the Basic.
+///
+/// It was three times until then. Worth encoding rather than assuming a fixed
+/// ratio: the multiple is policy that has already moved once, so treating it
+/// as arithmetic would quietly misstate every cohort on the other side of the
+/// change — and would hide that it can move again.
+const ersQuadrupleFrom = 2025;
+
+/// How many times the Basic Retirement Sum the Enhanced is, for [cohortYear].
+double ersMultipleFor(int cohortYear) => cohortYear >= ersQuadrupleFrom ? 4 : 3;
 
 /// The three sums for someone turning 55 in [cohortYear].
 typedef RetirementSums = ({double brs, double frs, double ers});
@@ -56,9 +67,9 @@ RetirementSums retirementSumsFor(
       brs /= 1 + growthPercent / 100;
     }
   }
-  // Structural, not separately announced: the Full Retirement Sum is twice the
-  // Basic, and the Enhanced is four times it.
-  return (brs: brs, frs: brs * 2, ers: brs * 4);
+  // The Full Retirement Sum is twice the Basic, which has held throughout. The
+  // Enhanced multiple has not — see [ersMultipleFor].
+  return (brs: brs, frs: brs * 2, ers: brs * ersMultipleFor(cohortYear));
 }
 
 /// The year someone [age] years old today turns 55.

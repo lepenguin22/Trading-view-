@@ -18,9 +18,9 @@ void main() {
       // the base belong to each other.
       final sums = retirementSumsFor(2027);
 
-      expect(sums.brs, closeTo(114057, 100));
-      expect(sums.frs, closeTo(sums.brs * 2, 0.01));
-      expect(sums.ers, closeTo(sums.brs * 4, 0.01));
+      expect(sums.brs, closeTo(114100, 100));
+      expect(sums.frs, closeTo(228200, 100));
+      expect(sums.ers, closeTo(456400, 400));
     });
 
     test('a later cohort faces a much larger sum', () {
@@ -35,10 +35,38 @@ void main() {
       expect(retirementSumsFor(2025).brs, lessThan(110200));
     });
 
-    test('the ratios hold whatever the base and rate', () {
+    test('Full is always twice Basic, whatever the base and rate', () {
       final sums = retirementSumsFor(2040, base: 90000, growthPercent: 2);
       expect(sums.frs, closeTo(sums.brs * 2, 0.01));
-      expect(sums.ers, closeTo(sums.brs * 4, 0.01));
+    });
+
+    test('reproduces the published Basic sums across announced cohorts', () {
+      // The whole announced schedule, as a check on the base and the rate
+      // together. CPF's own site is unreachable from here, so this table is
+      // the closest thing to the source that can live in the repo.
+      const published = {
+        2023: 99400.0,
+        2024: 102900.0,
+        2025: 106500.0,
+        2026: 110200.0,
+        2027: 114100.0,
+      };
+      for (final entry in published.entries) {
+        expect(
+          retirementSumsFor(entry.key).brs,
+          closeTo(entry.value, 500),
+          reason: 'the ${entry.key} cohort',
+        );
+      }
+    });
+
+    test('the Enhanced multiple changed in 2025 and is not assumed', () {
+      // Three times the Basic until 2025, four from it. Encoded rather than
+      // treated as arithmetic: it is policy that has already moved once.
+      expect(retirementSumsFor(2024).ers, closeTo(102900 * 3, 1600));
+      expect(retirementSumsFor(2026).ers, closeTo(110200 * 4, 0.01));
+      expect(ersMultipleFor(2024), 3);
+      expect(ersMultipleFor(2025), 4);
     });
   });
 

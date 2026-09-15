@@ -537,10 +537,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         _field(_kBrsGrowth, 'Assumed annual rise', suffix: '%'),
         const SizedBox(height: 6),
         Text(
-          'Full is twice Basic and Enhanced is four times it, which CPF sets '
-          'structurally rather than announcing separately. The rise defaults '
-          'to the $brsGrowthPercentDefault% a year set for the 2023-to-'
-          '$lastAnnouncedCohort cohorts.',
+          'Full is twice Basic, which has held throughout. Enhanced is '
+          '${ersMultipleFor(check.cohortYear).toStringAsFixed(0)} times it — '
+          'three until the $ersQuadrupleFrom cohort, four from it, because '
+          'that multiple is policy and has already moved once. The rise '
+          'defaults to the $brsGrowthPercentDefault% a year set for the '
+          '2023-to-$lastAnnouncedCohort cohorts.',
           style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
         ),
       ]),

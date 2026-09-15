@@ -455,8 +455,25 @@ left to the reader:
 Only the cohorts up to **2027** have been announced — Budget 2022 set 2023 to
 2027 rising about 3.5% a year. Anything later is this app's extrapolation, not
 CPF's figures, and the card says so in as many words. The base sum and the
-assumed rise are both inputs; Full is twice Basic and Enhanced four times it,
-which CPF sets structurally rather than announcing separately.
+assumed rise are both inputs.
+
+Full is twice Basic, which has held throughout. **Enhanced is not a fixed
+ratio**: it was three times Basic until the 2025 cohort and four times from it.
+That multiple is policy and has already moved once, so it is encoded against
+the year it changed rather than assumed — treating it as arithmetic would
+quietly misstate every cohort on the other side of the change, and hide that it
+can move again.
+
+| Turning 55 in | BRS | FRS | ERS |
+|---|---|---|---|
+| 2023 | $99,400 | $198,800 | $298,200 |
+| 2024 | $102,900 | $205,800 | $308,700 |
+| 2025 | $106,500 | $213,000 | $426,000 |
+| 2026 | $110,200 | $220,400 | $440,800 |
+| 2027 | $114,100 | $228,200 | $456,400 |
+
+A test reproduces the Basic column from the base and the rate, which is what
+says the two belong to each other.
 
 **Almost nothing here encodes CPF policy.** The age allocation table above is
 the single exception, and only when an age is given. Contribution percentages,
