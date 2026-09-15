@@ -190,6 +190,12 @@ int nearestIndex(List<double> xs, double x) {
   return best;
 }
 
+/// Type scale for every chart's axis labels.
+///
+/// Here rather than on one chart: three of them label an axis now, and a
+/// second size would read as a mistake rather than a distinction.
+const axisLabelSize = 10.0;
+
 /// Tick values for a price axis, at round numbers inside [min]..[max].
 ///
 /// Steps are chosen from 1, 2, 2.5 and 5 times a power of ten, so labels land
