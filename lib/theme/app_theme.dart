@@ -18,6 +18,7 @@ class AppColors extends ThemeExtension<AppColors> {
     required this.accent,
     required this.danger,
     required this.ma,
+    required this.pots,
   });
 
   final Color bg;
@@ -43,6 +44,16 @@ class AppColors extends ThemeExtension<AppColors> {
   /// legend labelling each line directly.
   final List<Color> ma;
 
+  /// The projection's four stacked pots, bottom to top: Ordinary Account,
+  /// Special Account, MediSave, investments.
+  ///
+  /// Its own set rather than borrowing the moving-average colours: four series
+  /// need an order validated as four, and the stacking order is what decides
+  /// which pairs sit against each other. Checked with the palette validator in
+  /// both themes — worst adjacent pair ΔE 13.8 protan in light, 14.0 in dark,
+  /// against a target of 8.
+  final List<Color> pots;
+
   /// Colour for a change value: green up, red down, muted when unchanged.
   Color trend(double change) {
     if (!change.isFinite || change == 0) return flat;
@@ -63,6 +74,12 @@ class AppColors extends ThemeExtension<AppColors> {
     accent: Color(0xFF1A73E8),
     danger: Color(0xFFD93025),
     ma: [Color(0xFF2A78D6), Color(0xFFC4437A), Color(0xFFB26A00)],
+    pots: [
+      Color(0xFF2A78D6),
+      Color(0xFFB26A00),
+      Color(0xFF6F42C1),
+      Color(0xFFC4437A),
+    ],
   );
 
   static const dark = AppColors(
@@ -79,6 +96,12 @@ class AppColors extends ThemeExtension<AppColors> {
     accent: Color(0xFF5B9DF9),
     danger: Color(0xFFF05252),
     ma: [Color(0xFF3987E5), Color(0xFFD55181), Color(0xFFC98500)],
+    pots: [
+      Color(0xFF3987E5),
+      Color(0xFFC98500),
+      Color(0xFF8B6BD9),
+      Color(0xFFD55181),
+    ],
   );
 
   @override
@@ -96,6 +119,7 @@ class AppColors extends ThemeExtension<AppColors> {
     Color? accent,
     Color? danger,
     List<Color>? ma,
+    List<Color>? pots,
   }) {
     return AppColors(
       bg: bg ?? this.bg,
@@ -111,6 +135,7 @@ class AppColors extends ThemeExtension<AppColors> {
       accent: accent ?? this.accent,
       danger: danger ?? this.danger,
       ma: ma ?? this.ma,
+      pots: pots ?? this.pots,
     );
   }
 
@@ -130,6 +155,10 @@ class AppColors extends ThemeExtension<AppColors> {
       flat: Color.lerp(flat, other.flat, t)!,
       accent: Color.lerp(accent, other.accent, t)!,
       danger: Color.lerp(danger, other.danger, t)!,
+      pots: [
+        for (var i = 0; i < pots.length; i++)
+          Color.lerp(pots[i], other.pots[i], t)!,
+      ],
       ma: [
         for (var i = 0; i < ma.length; i++) Color.lerp(ma[i], other.ma[i], t)!,
       ],

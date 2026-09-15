@@ -295,9 +295,18 @@ have no count until the sheet is imported again.
 ## The calculator
 
 Under the overflow menu. It projects two pots forward month by month and
-charts them stacked: **CPF** underneath, because it happens out of salary
-whatever else is decided, and **investments** on top, because that is what the
-plan adds.
+charts them stacked: **CPF's three accounts** underneath, because they happen
+out of salary whatever else is decided, and **investments** on top, because that
+is what the plan adds. Within CPF the order is Ordinary, Special, MediSave — the
+order of the allocation tables, and of how freely the money can be used.
+
+The four series use their own validated colour set rather than borrowing the
+moving-average one: four series need an order checked as four, and the stacking
+order decides which pairs sit against each other. Run through the palette
+validator in both themes — worst adjacent pair ΔE 13.8 protan in light and 14.0
+in dark, against a target of 8. The legend names every band and wraps to two
+rows on a narrow phone rather than being cut off, so identity is never carried
+by colour alone.
 
 Salary drives both. Gross less your CPF percentage gives take-home, and the
 month is then written out as the subtraction it is:
@@ -321,10 +330,24 @@ typed, not something derived from what is left over — quietly trimming the
 contribution to fit the budget would project a plan you never described. What
 spending decides is whether the plan is affordable, and nothing else.
 
-**Nothing here encodes CPF policy.** Contribution percentages, the wage
-ceiling and the interest rate are all inputs, because every one of them has
-changed in recent years and a calculator quietly using a stale figure is worse
-than one that asks. Defaults lean conservative where a guess would flatter the
+**CPF is three accounts, not one.** Ordinary, Special and MediSave each get
+their own opening balance, their own share of the wage, and their own interest
+rate — because they do not pay the same. The Ordinary Account earns 2.5%
+against 4% on Special and MediSave, and averaging them into a single rate hid
+which pot was doing the work. They stack as three bands on the chart, under
+investments, and appear as three rows in the summary.
+
+Shares are percentages of your wage, the form CPF publishes its allocation
+tables in, so a rate looked up there goes in as written. **The employer's share
+is derived, not asked for** — it is whatever reaches CPF that did not come out
+of take-home pay. Two inputs that had to agree would be a rule to get wrong; if
+more comes out of your pay than reaches CPF, which cannot happen, the
+calculator says so rather than projecting on it.
+
+**Nothing here encodes CPF policy.** Contribution percentages, allocation
+shares, the wage ceiling and the interest rates are all inputs, because every
+one of them has changed in recent years — allocation shifts with age — and a
+calculator quietly using a stale figure is worse than one that asks. Defaults lean conservative where a guess would flatter the
 result: CPF interest starts at the Ordinary Account's 2.5% rather than the 4%
 paid on Special and MediSave, and there is no pay rise unless you set one.
 

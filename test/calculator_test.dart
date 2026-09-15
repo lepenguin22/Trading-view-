@@ -162,9 +162,12 @@ void main() {
     await type(tester, 'Gross monthly salary', '10000');
     await type(tester, 'Years', '1');
 
-    // With no ceiling, a year of 37% on 10,000 reaches CPF. It also earns
-    // 2.5% by default, so allow for a little interest on top.
-    expect(valueFor(tester, 'CPF', within: projection()), startsWith(r'$44,'));
+    // With no ceiling, a year of 23+6+8% on 10,000 reaches CPF: 44,400,
+    // plus interest at each account's own rate.
+    expect(
+      valueFor(tester, 'CPF together', within: projection()),
+      startsWith(r'$45,'),
+    );
   });
 
   testWidgets('the ceiling caps the contribution when set', (tester) async {
@@ -174,8 +177,68 @@ void main() {
     await type(tester, 'CPF wage ceiling (blank for none)', '7400');
 
     // Contributions are 7,400 x 37% x 12 = 32,856, capped rather than the
-    // 44,400 the full salary would give; the rest is 2.5% interest.
-    expect(valueFor(tester, 'CPF', within: projection()), startsWith(r'$33,'));
+    // 44,400 the full salary would give; the rest is interest.
+    expect(
+      valueFor(tester, 'CPF together', within: projection()),
+      startsWith(r'$33,'),
+    );
+  });
+
+  testWidgets('each CPF account is shown on its own', (tester) async {
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '10000');
+    await type(tester, 'Years', '1');
+
+    // One month's 23/6/8 of 10,000 is 2,300 / 600 / 800, so after a year the
+    // accounts are far enough apart to be told from one another — which is
+    // what a single blended CPF figure hid.
+    final oa = valueFor(tester, 'Ordinary Account', within: projection());
+    final sa = valueFor(tester, 'Special Account', within: projection());
+    final ma = valueFor(tester, 'MediSave', within: projection());
+
+    expect(oa, startsWith(r'$27,'));
+    expect(sa, startsWith(r'$7,'));
+    expect(ma, startsWith(r'$9,'));
+
+    // And the employer's share is derived, never asked for.
+    expect(find.text("Employer's CPF contribution"), findsNothing);
+    expect(valueFor(tester, "Employer's share"), '17% of wage');
+  });
+
+  testWidgets('an impossible employee rate is flagged, not absorbed', (
+    tester,
+  ) async {
+    await open(tester);
+    await type(tester, 'Gross monthly salary', '4300');
+    expect(find.textContaining('cannot happen'), findsNothing);
+
+    // More out of pay than reaches CPF: the allocation and the rate are from
+    // different age bands, and every CPF figure would be built on it.
+    await type(tester, 'Your CPF contribution', '40');
+    expect(find.textContaining('cannot happen'), findsOneWidget);
+  });
+
+  testWidgets('the four-band chart fits a narrow phone', (tester) async {
+    // The legend is four keys now. It wraps rather than running off the edge —
+    // a cut-off legend is worse than two rows, and a RenderFlex overflow here
+    // fails the test on its own.
+    tester.view.physicalSize = const Size(360, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      MaterialApp(theme: lightTheme, home: const CalculatorScreen()),
+    );
+    await tester.pumpAndSettle();
+    await type(tester, 'Gross monthly salary', '4300');
+
+    for (final key in ['Investments', 'MediSave', 'Special', 'Ordinary']) {
+      expect(
+        find.text(key),
+        findsWidgets,
+        reason: '"$key" should be named, not left to colour alone',
+      );
+    }
   });
 
   testWidgets('inputs survive leaving and returning', (tester) async {
