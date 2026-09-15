@@ -362,6 +362,27 @@ void main() {
     expect(valueFor(tester, 'Band', within: splitCard()), 'above 50 to 55');
   });
 
+  testWidgets('the band line says when the split will shift', (tester) async {
+    await open(tester);
+    await type(tester, 'Your age (blank to set the shares yourself)', '28');
+    await type(tester, 'Years', '20');
+
+    // 28 over twenty years crosses two bands. Not at 35 — CPF's first band is
+    // "35 and below", so the change lands on the birthday after it.
+    expect(
+      valueFor(tester, 'Shifts at', within: splitCard()),
+      'age 36, then 46',
+    );
+
+    // A projection that stays inside one band says so rather than leaving the
+    // row blank, which would read as "unknown" instead of "none".
+    await type(tester, 'Years', '5');
+    expect(
+      valueFor(tester, 'Shifts at', within: splitCard()),
+      'no change in 5 years',
+    );
+  });
+
   testWidgets('a projection running past 55 says the table stops', (
     tester,
   ) async {

@@ -158,6 +158,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     final input = _input;
     final byAge = input.currentAge > 0;
     final share = input.allocationAt(0);
+    final shifts = allocationShifts(input.currentAge, input.years);
     final points = project(input);
     final summary = ProjectionSummary.of(points, input);
 
@@ -280,6 +281,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               _row('Ordinary', '${_trim(share.oa)}% of wage'),
               _row('Special', '${_trim(share.sa)}% of wage'),
               _row('MediSave', '${_trim(share.ma)}% of wage'),
+              // The shifts are otherwise invisible — a faint kink in the
+              // chart and nothing in the summary — so someone reading the
+              // band above could take it for the whole projection.
+              _row('Shifts at', _describeShifts(shifts, input.years)),
               const SizedBox(height: 6),
               Text(
                 'The split follows your age and keeps following it as the '
@@ -435,6 +440,15 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
         ),
       ),
     );
+  }
+
+  /// "36, then 46", or why there is nothing to list.
+  static String _describeShifts(List<int> shifts, int years) {
+    if (shifts.isEmpty) {
+      return years <= 0 ? '—' : 'no change in $years years';
+    }
+    if (shifts.length == 1) return 'age ${shifts.first}';
+    return 'age ${shifts.first}, then ${shifts.skip(1).join(', ')}';
   }
 
   Widget _row(
