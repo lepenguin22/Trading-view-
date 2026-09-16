@@ -409,8 +409,8 @@ calculator says so rather than projecting on it.
 
 ### Starting from the portfolio
 
-The Investing card shows what the imported portfolio is currently worth and
-offers to take it as **Invested today**.
+The first portfolio's card shows what the imported portfolio is currently worth
+and offers to take it as **Invested today**.
 
 **Offered, not applied.** The figure moves with every price refresh, and a
 projection whose opening balance drifts under the reader is worse than one they
@@ -434,10 +434,17 @@ would compound that gap for every year of the projection.
 
 ### Three investment portfolios
 
-Two cards below Investing — **Second portfolio** and **Third portfolio** — take
-a balance, a monthly amount and a rate each. Nothing is imported into them:
-they are for money this app does not track, and they are plain numbers by
-design.
+Three cards, each taking a name, a balance, a monthly amount and a rate.
+Nothing is imported into the second and third: they are for money this app does
+not track, and they are plain numbers by design.
+
+**Each one is named**, and the name is what its card is headed with and what
+its row in the summary reads — "IBKR" and "Pension" tell you something that
+"Second portfolio" and "Third portfolio" do not. Those defaults are hints
+rather than text, so there is nothing to clear before typing and emptying the
+field hands the default straight back. Names live in the same saved blob as the
+figures, written in one go, because a projection with its names one save behind
+its numbers would be worse than one with neither.
 
 **A rate per portfolio, not one rate across them.** Averaging three portfolios
 into a single rate is the mistake these cards exist to avoid: a cash account at
@@ -454,11 +461,11 @@ it did not.
 
 **Only the first portfolio is fed by the import**, and only the first is what
 "Less investing" measures against take-home pay. The other two are assumed to
-be funded from elsewhere; the calculator does not pretend to know where.
-
-Their names are fixed rather than typed in. Saved inputs are a map of numbers,
-so a name would be dropped on the next save and come back as the default
-anyway — better not to offer the field than to lose what is put in it.
+be funded from elsewhere; the calculator does not pretend to know where. That
+is the only way the first differs — it is named and renamed like the other two,
+and its card is headed by its name like theirs, because the summary lists all
+three side by side and one card that would not follow its own row there is the
+odd one out.
 
 ### The retirement sums
 

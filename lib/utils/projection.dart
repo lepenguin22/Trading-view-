@@ -102,6 +102,7 @@ class ProjectionInput {
     this.maPercent = 8,
     this.investmentReturnPercent = 7,
     this.extraPots = const [],
+    this.investmentsLabel = 'Main portfolio',
     this.oaReturnPercent = 2.5,
     this.saReturnPercent = 4,
     this.maReturnPercent = 4,
@@ -189,9 +190,14 @@ class ProjectionInput {
   /// measured against. The rest are plain numbers the user types.
   final List<InvestmentPot> extraPots;
 
+  /// What the pot built from the flat fields above is called. A field rather
+  /// than a constant because it is the reader's to name, like the extra pots.
+  final String investmentsLabel;
+
   /// Every pot, the first included.
   List<InvestmentPot> get pots => [
     InvestmentPot(
+      label: investmentsLabel,
       starting: startingInvestments,
       monthly: monthlyInvestment,
       returnPercent: investmentReturnPercent,
