@@ -8,6 +8,7 @@ import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
 import '../utils/format.dart';
 import '../utils/cpf_allocation.dart';
+import '../utils/cpf_payout.dart';
 import '../utils/portfolio_capital.dart';
 import '../utils/retirement_sums.dart';
 import '../utils/projection.dart';
@@ -606,6 +607,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     }
 
     final standing = standingOf(check);
+    final payout = estimatePayout(check);
     return [
       const Divider(height: 20),
       _row(
@@ -619,6 +621,103 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           'Short of ${standing.next}',
           formatCompactValue(standing.shortfall, widget.currency),
         ),
+      // The figure the whole CPF half of this screen is really for. A balance
+      // at 55 is a number; what it pays every month is the thing being bought
+      // with it, and burying that in the last card would waste it.
+      _row(
+        'CPF LIFE from ${payout.fromYear}',
+        payout.monthly == null
+            ? 'under the CPF LIFE minimum'
+            : '${_payoutRange(payout.monthly!)} a month',
+        bold: true,
+        color: payout.monthly == null ? c.down : c.up,
+      ),
+    ];
+  }
+
+  /// "\$1,670 to \$1,780", or one figure when they round together.
+  String _payoutRange(PayoutRange range) {
+    final low = formatValue(range.low, widget.currency);
+    final high = formatValue(range.high, widget.currency);
+    return low == high ? low : '$low to $high';
+  }
+
+  /// What the Retirement Account buys in monthly income, from 65.
+  List<Widget> _payoutCard(RetirementCheck check) {
+    final c = context.colors;
+    final payout = estimatePayout(check);
+
+    return [
+      _card('CPF LIFE payouts', [
+        if (payout.monthly == null)
+          Text(
+            'CPF LIFE includes you automatically from '
+            '${formatValue(cpfLifeThresholdAtPayout, widget.currency)} in the '
+            'Retirement Account at $payoutAge, and this projection reaches '
+            '${formatValue(payout.atPayoutAge, widget.currency)}. Under that '
+            'the Retirement Sum Scheme pays out until the savings are gone, '
+            'which is not the lifelong income a payout figure would imply — '
+            'so there is none to quote here.',
+            style: TextStyle(color: c.down, fontSize: 12.5, height: 1.45),
+          )
+        else ...[
+          _row(
+            'From $payoutAge, in ${payout.fromYear}',
+            '${_payoutRange(payout.monthly!)} a month',
+            bold: true,
+            color: c.up,
+          ),
+          const SizedBox(height: 4),
+          _row(
+            'Set aside at $retirementAccountAge',
+            formatValue(payout.setAside, widget.currency),
+          ),
+          if (payout.aboveEnhanced > 0)
+            _row(
+              'Above Enhanced, not annuitised',
+              formatValue(payout.aboveEnhanced, widget.currency),
+              color: c.textMuted,
+            ),
+          const SizedBox(height: 8),
+          Text(
+            'A range, because CPF publishes one: two members setting aside the '
+            'same amount do not receive the same payout, and the single figure '
+            'most write-ups carry is the top of it.'
+            '\n\nPayouts begin at $payoutAge, ten years after the Retirement '
+            "Account is formed. CPF's figures are keyed on the balance at "
+            '$retirementAccountAge and already contain that decade of '
+            'interest, so nothing here compounds it twice.',
+            style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
+          ),
+          if (payout.aboveEnhanced > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Only what reaches the Enhanced sum is annuitised. The '
+              '${formatCompactValue(payout.aboveEnhanced, widget.currency)} '
+              'above it stays in your Ordinary and Special Accounts — still '
+              'yours, simply not buying payouts.',
+              style: TextStyle(
+                color: c.textFaint,
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+            ),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            'In ${payout.fromYear} dollars, not today\'s. The projection '
+            'above is nominal throughout, so this payout is too: it buys what '
+            '${payout.fromYear} prices allow, which is less than the same '
+            'figure would buy now.'
+            '\n\nStandard Plan. The Basic Plan pays less and leaves more to '
+            'bequeath; the Escalating Plan starts about a fifth lower and '
+            'rises 2% a year. This is an estimate on today\'s CPF LIFE '
+            'assumptions — over a projection this long, the interest and '
+            'life-expectancy figures behind it will move.',
+            style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
+          ),
+        ],
+      ]),
     ];
   }
 
@@ -710,6 +809,10 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           style: TextStyle(color: c.textFaint, fontSize: 12.5, height: 1.45),
         ),
       ]),
+      // Straight after the sums, off the same check: the balance at 55 and
+      // what it pays are one question asked twice, and a card between them
+      // would be a card too many.
+      ..._payoutCard(check),
     ];
   }
 

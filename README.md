@@ -483,6 +483,53 @@ showing nothing, both the summary and the card say how many more years are
 needed — the field that fixes it sits *below* the message, so leaving the
 reader to work it out would be doubly unhelpful.
 
+### CPF LIFE payouts
+
+A balance at 55 is a number. What it pays every month is the thing being bought
+with it, so the calculator says both — in the summary at the top and in a card
+of its own below the sums.
+
+**The payout is a range, because CPF publishes one.** Two members setting aside
+the same amount do not receive the same monthly payout, and the single figure
+most write-ups carry is the top of that range. Quoting only that would flatter
+every projection here.
+
+**The line is CPF's arithmetic, not a curve fitted to it.** It is calibrated on
+two published points for the 2026 cohort — $110,200 paying $860–$950 a month,
+$220,400 paying $1,670–$1,780 — and it then reproduces the published Enhanced
+figure, $3,290–$3,440 on $440,800, to the dollar. That the third point falls
+out of a line drawn through the other two is the evidence the relationship is
+real, and it is the check that fails first if an anchor is ever mistyped.
+
+**The payout is not proportional to the balance.** CPF's figures work out at
+$8.62 a month per $1,000 at the Basic sum and $7.80 at the Enhanced. Scaling one
+ratio — the obvious shortcut — would overstate a large balance by about a
+hundred dollars a month.
+
+**Payouts start at 65, not 55.** The Retirement Account is formed at 55 and then
+sits for ten years earning interest before a cent is paid. CPF's figures are
+keyed on the balance at 55 and already contain that decade, so nothing here
+compounds it twice.
+
+**Only what reaches the Enhanced sum is annuitised.** Eligible savings above it
+stay in the Ordinary and Special Accounts — still yours, simply not buying
+payouts. The card names that money rather than letting it vanish from the
+arithmetic without explanation.
+
+**Below the CPF LIFE minimum there is no payout to quote.** CPF includes a
+member automatically from $60,000 in the Retirement Account at 65, which is
+about $40,500 at 55. Under that, the Retirement Sum Scheme pays out until the
+savings are gone — not a lifelong income — so the card says so instead of
+printing "$0.00 a month", which would read as an answer rather than as a
+different scheme on different terms.
+
+**The figure is in the dollars of the year it is paid.** The projection is
+nominal throughout and so is this, which matters most for the people it matters
+to: someone 28 today is reading a payout in 2063 dollars.
+
+Standard Plan throughout. The Basic Plan pays less and leaves more to bequeath;
+the Escalating Plan starts about a fifth lower and rises 2% a year.
+
 Three things make this easy to get wrong, and all three are handled rather than
 left to the reader:
 

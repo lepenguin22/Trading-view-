@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:ticker/screens/calculator_screen.dart';
 import 'package:ticker/state/storage.dart';
 import 'package:ticker/theme/app_theme.dart';
+import 'package:ticker/utils/retirement_sums.dart';
 import 'package:ticker/widgets/projection_chart.dart';
 
 void main() {
@@ -14,9 +15,11 @@ void main() {
   /// The screen is a lazy ListView, so on a phone-sized surface the cards
   /// below the fold are never built and scrolling to one disposes another.
   /// A tall viewport keeps the whole form live, which is what these tests are
-  /// about — the arithmetic across sections, not the scrolling.
+  /// about — the arithmetic across sections, not the scrolling. It has to grow
+  /// with the form: a card added above Horizon pushes it past the old 4000 and
+  /// every test that types a year stops finding the field.
   Future<void> open(WidgetTester tester) async {
-    tester.view.physicalSize = const Size(1200, 4000);
+    tester.view.physicalSize = const Size(1200, 6000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -715,6 +718,165 @@ void main() {
             .text,
         '2500',
       );
+    });
+  });
+
+  group('CPF LIFE payouts', () {
+    /// Sets an age and horizon that reach 55 with the Full sum in the Special
+    /// Account, so the payout on screen is CPF's published one.
+    Future<void> toFullSum(WidgetTester tester) async {
+      await open(tester);
+      await type(tester, 'Your age (blank to set the shares yourself)', '54');
+      await type(tester, 'Years', '5');
+      await type(
+        tester,
+        'Balance today',
+        '220400',
+        within: card('CPF — Special Account'),
+      );
+      await type(
+        tester,
+        'Interest rate',
+        '0',
+        within: card('CPF — Special Account'),
+      );
+      await type(
+        tester,
+        'Interest rate',
+        '0',
+        within: card('CPF — Ordinary Account'),
+      );
+    }
+
+    testWidgets('the payout is named in the summary, not only in its card', (
+      tester,
+    ) async {
+      // The same lesson as the retirement verdict: a card this far down reads
+      // as absent to anyone who does not scroll to it.
+      await toFullSum(tester);
+
+      final line = valueFor(
+        tester,
+        'CPF LIFE from ${DateTime.now().year + 1 + 10}',
+        within: projection(),
+      );
+      expect(line, contains(r'$1,670.00'));
+      expect(line, contains(r'$1,780.00'));
+    });
+
+    testWidgets('the card says what was set aside and when it pays', (
+      tester,
+    ) async {
+      await toFullSum(tester);
+      final payoutCard = card('CPF LIFE payouts');
+
+      expect(
+        valueFor(tester, 'Set aside at 55', within: payoutCard),
+        r'$220,400.00',
+      );
+      expect(
+        find.descendant(
+          of: payoutCard,
+          matching: find.textContaining('From 65, in'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'a balance under the CPF LIFE minimum is said, not shown as 0',
+      (tester) async {
+        await open(tester);
+        await type(tester, 'Your age (blank to set the shares yourself)', '54');
+        await type(tester, 'Years', '5');
+        await type(
+          tester,
+          'Balance today',
+          '5000',
+          within: card('CPF — Special Account'),
+        );
+        await type(
+          tester,
+          'Interest rate',
+          '0',
+          within: card('CPF — Special Account'),
+        );
+        await type(
+          tester,
+          'Interest rate',
+          '0',
+          within: card('CPF — Ordinary Account'),
+        );
+
+        // "$0.00 a month" would read as an answer. It is a different scheme.
+        expect(
+          find.descendant(
+            of: card('CPF LIFE payouts'),
+            matching: find.textContaining('Retirement Sum Scheme'),
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining(r'$0.00 a month'), findsNothing);
+      },
+    );
+
+    testWidgets('savings above the Enhanced sum are named, not annuitised', (
+      tester,
+    ) async {
+      await open(tester);
+      await type(tester, 'Your age (blank to set the shares yourself)', '54');
+      await type(tester, 'Years', '5');
+      await type(
+        tester,
+        'Balance today',
+        '640800',
+        within: card('CPF — Special Account'),
+      );
+      await type(
+        tester,
+        'Interest rate',
+        '0',
+        within: card('CPF — Special Account'),
+      );
+      await type(
+        tester,
+        'Interest rate',
+        '0',
+        within: card('CPF — Ordinary Account'),
+      );
+
+      final payoutCard = card('CPF LIFE payouts');
+      // Derived, not hard-coded: someone 54 today turns 55 next year, so the
+      // sums are one year of extrapolation above the published 2026 figures.
+      // Writing $440,800 here would pass only in 2025.
+      final ers = retirementSumsFor(DateTime.now().year + 1).ers;
+      expect(
+        _money(
+          valueFor(
+            tester,
+            'Above Enhanced, not annuitised',
+            within: payoutCard,
+          ),
+        ),
+        closeTo(640800 - ers, 1),
+      );
+      // The payout is the Enhanced one, unmoved by the money beside it.
+      expect(
+        _money(valueFor(tester, 'Set aside at 55', within: payoutCard)),
+        closeTo(ers, 1),
+      );
+    });
+
+    testWidgets('no age means no payout claim at all', (tester) async {
+      await open(tester);
+      await type(
+        tester,
+        'Balance today',
+        '220400',
+        within: card('CPF — Special Account'),
+      );
+
+      expect(card('CPF LIFE payouts'), findsNothing);
     });
   });
 
