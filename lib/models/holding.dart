@@ -1,6 +1,25 @@
 import '../utils/portfolio_csv.dart' show financialScoreMax, moatScoreMax;
 import 'score.dart';
 
+/// Why a scored holding carries no date.
+///
+/// Three different problems wore the same words once — "no date" was shown
+/// whether the sheet had no such column at all or a cell in it could not be
+/// read. They are fixed in different places: one is the sheet's layout (or a
+/// stale publish that predates the column), the other a single cell's format.
+/// Saying which turns a guess into an instruction.
+enum NoDateReason {
+  /// The sheet had no column saying when scores were arrived at.
+  noColumn,
+
+  /// The column is there; this row's cell is empty.
+  blank,
+
+  /// The cell held something that could not be read as a date — most often an
+  /// order like 03/04/2026, which is refused rather than guessed at.
+  unreadable,
+}
+
 /// One line of the portfolio: a symbol and, when the sheet says so, how many
 /// shares are held.
 ///
@@ -16,6 +35,7 @@ class Holding {
     this.financialScore,
     this.moatScore,
     this.scoredAt,
+    this.noDateReason,
   });
 
   final String symbol;
@@ -50,6 +70,11 @@ class Holding {
   /// current is the way this feature would mislead.
   final DateTime? scoredAt;
 
+  /// Why [scoredAt] is absent. Null whenever a date was read, and null on a
+  /// holding from a build that predates this, where the reason is unknowable
+  /// rather than any particular one of the three.
+  final NoDateReason? noDateReason;
+
   /// True when either score exists.
   bool get hasScores => financialScore != null || moatScore != null;
 
@@ -83,6 +108,7 @@ class Holding {
     Score? financialScore,
     Score? moatScore,
     DateTime? scoredAt,
+    NoDateReason? noDateReason,
   }) => Holding(
     symbol: symbol ?? this.symbol,
     shares: shares ?? this.shares,
@@ -90,6 +116,7 @@ class Holding {
     financialScore: financialScore ?? this.financialScore,
     moatScore: moatScore ?? this.moatScore,
     scoredAt: scoredAt ?? this.scoredAt,
+    noDateReason: noDateReason ?? this.noDateReason,
   );
 
   Map<String, dynamic> toJson() => {
@@ -99,6 +126,7 @@ class Holding {
     if (financialScore != null) 'financialScore': financialScore!.toJson(),
     if (moatScore != null) 'moatScore': moatScore!.toJson(),
     if (scoredAt != null) 'scoredAt': scoredAt!.millisecondsSinceEpoch,
+    if (noDateReason != null) 'noDateReason': noDateReason!.name,
   };
 
   static Holding? fromJson(Object? raw) {
@@ -122,7 +150,20 @@ class Holding {
       scoredAt: scoredAt is num && scoredAt > 0
           ? DateTime.fromMillisecondsSinceEpoch(scoredAt.toInt())
           : null,
+      noDateReason: _reasonFrom(raw['noDateReason']),
     );
+  }
+
+  /// Reads a stored reason, ignoring one this build does not know.
+  ///
+  /// A name written by a later build is dropped rather than guessed at: an
+  /// unknown reason is no reason, which is exactly what null already means.
+  static NoDateReason? _reasonFrom(Object? raw) {
+    if (raw is! String) return null;
+    for (final reason in NoDateReason.values) {
+      if (reason.name == raw) return reason;
+    }
+    return null;
   }
 
   @override
@@ -133,7 +174,8 @@ class Holding {
       other.costPerShare == costPerShare &&
       other.financialScore == financialScore &&
       other.moatScore == moatScore &&
-      other.scoredAt == scoredAt;
+      other.scoredAt == scoredAt &&
+      other.noDateReason == noDateReason;
 
   @override
   int get hashCode => Object.hash(
@@ -143,6 +185,7 @@ class Holding {
     financialScore,
     moatScore,
     scoredAt,
+    noDateReason,
   );
 
   @override

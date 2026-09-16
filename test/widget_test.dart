@@ -1338,9 +1338,78 @@ void main() {
     await tester.pumpAndSettle();
 
     // Only one score, and no date — the score still shows, but it must not
-    // look timeless.
+    // look timeless. A save from before the reason was recorded cannot say
+    // which of the three kinds of missing this was, so it says the least.
     expect(find.text('Fin 14/19'), findsOneWidget);
     expect(find.text('no date'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a sheet with no date column says that, not "no date"', (
+    tester,
+  ) async {
+    // The two were one message once, and they send the reader to different
+    // places: a missing column is the sheet's layout — most often a published
+    // CSV frozen before the column was added — not a cell to reformat.
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14,'
+          '"noDateReason":"noColumn"}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('no date column'), findsOneWidget);
+    expect(find.text('no date'), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a cell that could not be read says the date is unreadable', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14,'
+          '"noDateReason":"unreadable"}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('date unreadable'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a reason this build does not know reads as no reason', (
+    tester,
+  ) async {
+    // Forward compatibility: a name written by a later build must not crash
+    // the list or print itself raw. An unknown reason is no reason, which is
+    // what the oldest saves already mean.
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14,'
+          '"noDateReason":"somethingNewer"}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('no date'), findsOneWidget);
+    expect(find.textContaining('somethingNewer'), findsNothing);
 
     await teardown(tester);
   });

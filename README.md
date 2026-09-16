@@ -686,11 +686,34 @@ number rather than an old one.
 - An ambiguous date. `2026-08-15` and `15/08/2026` are read; **`03/04/2026` is
   not**, because it is March 4th to half the world and April 3rd to the other
   half. Since this date drives the staleness label, being a month wrong would
-  make an old score look current. The row says `no date` so the sheet can be
-  corrected. **Format the column as `YYYY-MM-DD` and it always reads.**
+  make an old score look current. **Format the column as `YYYY-MM-DD` and it
+  always reads.**
 
 A holding scored but undated keeps its scores: the date is what is missing, not
 the judgement.
+
+**Which kind of missing, said in words.** A score with no date carries one of
+three messages, because they are fixed in three different places:
+
+| The row says | What it means | Where to fix it |
+| --- | --- | --- |
+| `no date column` | The sheet has no column naming when scores were arrived at | The sheet's columns — or a **published CSV frozen before you added one** |
+| `no date` | The column is there; this row's cell is empty | That row |
+| `date unreadable` | The cell held something that could not be read | That cell's format |
+
+The first two wore the same words once, and they are the two most easily
+confused: a reader told `no date` goes to reformat a cell that is not the
+problem, when the column never reached the app at all. That last case is worth
+knowing about — the app reads the **Publish to web** CSV, which is a separate
+snapshot from the live sheet. If "Automatically republish when changes are
+made" is unticked, a column added after the last manual publish never appears,
+and every row reads `no date column` however correct the sheet looks.
+
+Accepted headings, case and punctuation ignored: `Scored`, `Score date`,
+`Date scored`, `Reviewed`, or anything starting `Scored…`, `Analysed…`,
+`Analyzed…` or `Reviewed…`. A column headed only `Date` is deliberately not
+matched — sheets carry `Date bought` and `Date added` too, and latching the
+staleness label onto a purchase date would report nonsense confidently.
 
 ## How often prices update
 

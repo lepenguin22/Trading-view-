@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ticker/models/holding.dart';
 import 'package:ticker/models/score.dart';
 import 'package:ticker/utils/portfolio_csv.dart';
 
@@ -395,6 +396,28 @@ void main() {
       expect(ddd.financialScore, const Score(11, 17));
       expect(ddd.moatScore, const Score(8, 14));
       expect(ddd.scoredAt, isNull);
+      // The column is there and this row's cell is empty, which is a
+      // different problem from the sheet having no column at all.
+      expect(ddd.noDateReason, NoDateReason.blank);
+    });
+
+    test('a date that was read leaves no reason to explain', () {
+      final aaa = parseHoldingsCsv(sheet).firstWhere((h) => h.symbol == 'AAA');
+      expect(aaa.scoredAt, DateTime(2026, 8, 15));
+      expect(aaa.noDateReason, isNull);
+    });
+
+    test('an unreadable cell is told apart from an empty one', () {
+      // 03/04/2026 is March 4th to half the world and April 3rd to the other,
+      // so it is refused. Saying "no date" for it would send the reader to
+      // check their columns when the fix is in this one cell.
+      const csv =
+          'Ticker,Shares bought,Financial score,Date Scored\n'
+          'AAA,10,12/17,03/04/2026\n';
+      final holding = parseHoldingsCsv(csv).single;
+
+      expect(holding.scoredAt, isNull);
+      expect(holding.noDateReason, NoDateReason.unreadable);
     });
 
     test('a holding the sheet never scored carries no score', () {
@@ -427,8 +450,10 @@ void main() {
       expect(holding.costPerShare, 100);
       expect(holding.financialScore, const Score(12, 17));
       expect(holding.moatScore, const Score(8, 14));
-      // No column for it, so nothing is claimed about when it was scored.
+      // No column for it, so nothing is claimed about when it was scored —
+      // and the reason says the sheet's layout is where to look, not a cell.
       expect(holding.scoredAt, isNull);
+      expect(holding.noDateReason, NoDateReason.noColumn);
     });
 
     test('the score columns do not disturb quantity or cost', () {
