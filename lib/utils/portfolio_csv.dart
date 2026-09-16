@@ -177,6 +177,11 @@ List<Holding> parseHoldingsCsv(String csv) {
     if (symbol == null) continue;
     if (!seen.add(symbol)) continue;
 
+    final scoredCell = scoredAtColumn == null
+        ? ''
+        : _cell(rows[r], scoredAtColumn);
+    final scoredAt = scoredAtColumn == null ? null : parseSheetDate(scoredCell);
+
     out.add(
       Holding(
         symbol: symbol,
@@ -195,14 +200,26 @@ List<Holding> parseHoldingsCsv(String csv) {
         moatScore: moatScoreColumn == null
             ? null
             : parseScore(_cell(rows[r], moatScoreColumn), moatScoreMax),
-        scoredAt: scoredAtColumn == null
+        scoredAt: scoredAt,
+        noDateReason: scoredAt != null
             ? null
-            : parseSheetDate(_cell(rows[r], scoredAtColumn)),
+            : _noDateReason(scoredAtColumn, scoredCell),
       ),
     );
   }
 
   return out;
+}
+
+/// Which of the three ways a date can be missing this one is.
+///
+/// The distinction is the whole point: a missing column is the sheet's layout
+/// — or, just as often, a published CSV frozen before the column was added —
+/// while an unreadable cell is one row's formatting. Telling the reader "no
+/// date" for both sent them to fix the wrong thing.
+NoDateReason _noDateReason(int? column, String cell) {
+  if (column == null) return NoDateReason.noColumn;
+  return cell.trim().isEmpty ? NoDateReason.blank : NoDateReason.unreadable;
 }
 
 /// Locates the ticker column by its header.

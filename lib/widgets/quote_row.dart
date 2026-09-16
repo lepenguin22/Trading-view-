@@ -297,6 +297,18 @@ class _PositionLine extends StatelessWidget {
   }
 }
 
+/// What to say in place of a date, given why there is not one.
+///
+/// Three messages rather than one, because they send the reader to three
+/// different places: the sheet's columns, one row's cell, or nothing at all
+/// when an older save cannot say which it was.
+String _noDate(NoDateReason? reason) => switch (reason) {
+  NoDateReason.noColumn => 'no date column',
+  NoDateReason.blank => 'no date',
+  NoDateReason.unreadable => 'date unreadable',
+  null => 'no date',
+};
+
 /// The analysis checklist scores, and how old they are.
 ///
 /// The age is never omitted when it is known: a score is a snapshot of a
@@ -340,10 +352,10 @@ class _Scores extends StatelessWidget {
         Flexible(
           child: Text(
             textAlign: TextAlign.right,
-            // A date the sheet had but could not be read says so, rather than
-            // leaving a score looking timeless.
+            // A score without a date is never left looking timeless — and
+            // which kind of missing it is decides where to go and fix it.
             scoredAt == null
-                ? 'no date'
+                ? _noDate(holding.noDateReason)
                 : stale
                 ? '${formatScoredAt(scoredAt)} · stale'
                 : formatScoredAt(scoredAt),
