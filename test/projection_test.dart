@@ -519,6 +519,77 @@ void main() {
     });
   });
 
+  group('extra investment pots', () {
+    test('each pot compounds at its own rate, never a blended one', () {
+      // The trap this guards: averaging the rates, or running every pot at
+      // the first one's. Two pots, equal money, rates 0% and 12% — a blend
+      // would put both at 6% and land the total on the wrong number.
+      const input = ProjectionInput(
+        startingInvestments: 1000,
+        investmentReturnPercent: 0,
+        extraPots: [InvestmentPot(starting: 1000, returnPercent: 12)],
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 5,
+      );
+      final summary = ProjectionSummary.of(project(input), input);
+
+      expect(summary.potBalances, hasLength(2));
+      expect(summary.potBalances[0], closeTo(1000, 0.01));
+      expect(summary.potBalances[1], closeTo(1000 * _monthly(12, 60), 0.01));
+      expect(
+        summary.invested,
+        closeTo(summary.potBalances[0] + summary.potBalances[1], 1e-9),
+      );
+    });
+
+    test('monthly money into any pot counts as paid in', () {
+      const input = ProjectionInput(
+        monthlyInvestment: 100,
+        investmentReturnPercent: 0,
+        extraPots: [
+          InvestmentPot(starting: 500, monthly: 50, returnPercent: 0),
+          InvestmentPot(monthly: 25, returnPercent: 0),
+        ],
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 2,
+      );
+      final summary = ProjectionSummary.of(project(input), input);
+
+      expect(summary.totalContributed, closeTo(500 + 175 * 24, 0.01));
+      expect(summary.growth, closeTo(0, 0.01));
+    });
+
+    test('an empty pot is still a pot, worth nothing', () {
+      const input = ProjectionInput(
+        startingInvestments: 100,
+        investmentReturnPercent: 0,
+        extraPots: [InvestmentPot(returnPercent: 30)],
+        oaReturnPercent: 0,
+        saReturnPercent: 0,
+        maReturnPercent: 0,
+        years: 10,
+      );
+      final summary = ProjectionSummary.of(project(input), input);
+
+      // A rate on nothing earns nothing, however high it is.
+      expect(summary.potBalances[1], closeTo(0, 1e-9));
+      expect(input.pots[1].isEmpty, isTrue);
+    });
+
+    test('with no extra pots there is exactly one', () {
+      const input = ProjectionInput(startingInvestments: 100, years: 1);
+      expect(input.pots, hasLength(1));
+      expect(
+        ProjectionSummary.of(project(input), input).potBalances,
+        hasLength(1),
+      );
+    });
+  });
+
   group('ProjectionSummary', () {
     test('separates what was paid in from what was earned', () {
       const input = ProjectionInput(
