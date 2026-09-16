@@ -30,7 +30,7 @@ void main() {
   ///
   /// Three cards carry the same field labels — "Invested today" and the rest
   /// belong to each investment pot — so [within] says which card is meant.
-  /// Without it the first is taken, which is the Investing card: the pot every
+  /// Without it the first is taken, which is the main portfolio: the pot every
   /// test that predates the extra two is talking about.
   Future<void> type(
     WidgetTester tester,
@@ -613,10 +613,15 @@ void main() {
       await open(tester);
       await type(tester, 'Invested today', '1000');
 
+      // Scoped to the summary: every name is also a card heading and a hint
+      // in its own Name field, so a bare text search counts those too.
+      Finder inSummary(String name) =>
+          find.descendant(of: projection(), matching: find.text(name));
+
       // One pot: the Investments row already says everything a breakdown
       // would, so there is nothing to indent under it.
-      expect(find.text('Main portfolio'), findsNothing);
-      expect(find.text('Second portfolio'), findsOneWidget); // the card title
+      expect(inSummary('Main portfolio'), findsNothing);
+      expect(inSummary('Second portfolio'), findsNothing);
 
       await type(
         tester,
@@ -626,11 +631,59 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Main portfolio'), findsOneWidget);
-      // The card title, plus the summary row now under Investments.
-      expect(find.text('Third portfolio'), findsNWidgets(2));
+      expect(inSummary('Main portfolio'), findsOneWidget);
+      expect(inSummary('Third portfolio'), findsOneWidget);
       // The second pot is still empty, so it stays out of the breakdown.
-      expect(find.text('Second portfolio'), findsOneWidget);
+      expect(inSummary('Second portfolio'), findsNothing);
+    });
+
+    testWidgets('a renamed portfolio is called that everywhere', (
+      tester,
+    ) async {
+      await open(tester);
+      await type(tester, 'Invested today', '1000');
+      await type(
+        tester,
+        'Invested today',
+        '500',
+        within: card('Second portfolio'),
+      );
+      await type(
+        tester,
+        'Expected annual return',
+        '0',
+        within: card('Second portfolio'),
+      );
+      await type(tester, 'Name', 'IBKR', within: card('Second portfolio'));
+
+      // The card is headed by its new name, and so is its summary row.
+      expect(card('IBKR'), findsOneWidget);
+      expect(card('Second portfolio'), findsNothing);
+      expect(valueFor(tester, 'IBKR', within: projection()), r'$500.00');
+
+      // Emptying it hands the default back rather than leaving it nameless.
+      await type(tester, 'Name', '', within: card('IBKR'));
+      expect(card('Second portfolio'), findsOneWidget);
+    });
+
+    testWidgets('a name is saved and read back', (tester) async {
+      await open(tester);
+      await type(tester, 'Name', 'Pension', within: card('Third portfolio'));
+
+      await tester.tap(find.byTooltip('Save these inputs'));
+      await tester.pumpAndSettle();
+      expect(
+        await WatchlistStorage().loadCalculatorNames(),
+        containsPair('portfolioName3', 'Pension'),
+      );
+      // Names share a blob with the figures and must not be read as one.
+      expect(
+        await WatchlistStorage().loadCalculatorInputs(),
+        isNot(contains('portfolioName3')),
+      );
+
+      await open(tester);
+      expect(card('Pension'), findsOneWidget);
     });
 
     testWidgets('the extra pots are saved and read back', (tester) async {

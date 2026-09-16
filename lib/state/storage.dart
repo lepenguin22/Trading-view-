@@ -188,9 +188,39 @@ class WatchlistStorage {
     }
   }
 
-  Future<void> saveCalculatorInputs(Map<String, double> values) async {
+  /// The names the portfolios were given, from the same blob as the figures.
+  ///
+  /// Kept in one blob rather than a key of their own so a save cannot write
+  /// half the form: names and figures are set on the same screen, at the same
+  /// moment, and two writes could leave one ahead of the other. The two
+  /// loaders read the same JSON and each ignores what is not theirs — a build
+  /// that predates names already drops them, and one that postdates a save
+  /// without them falls back to the defaults.
+  Future<Map<String, String>> loadCalculatorNames() async {
     try {
-      await (await _prefs).setString(_calculatorKey, jsonEncode(values));
+      final raw = (await _prefs).getString(_calculatorKey);
+      if (raw == null) return const {};
+      final parsed = jsonDecode(raw);
+      if (parsed is! Map) return const {};
+      return {
+        for (final entry in parsed.entries)
+          if (entry.key is String && entry.value is String)
+            entry.key as String: entry.value as String,
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
+  Future<void> saveCalculatorInputs(
+    Map<String, double> values, {
+    Map<String, String> names = const {},
+  }) async {
+    try {
+      await (await _prefs).setString(
+        _calculatorKey,
+        jsonEncode({...values, ...names}),
+      );
     } catch (_) {
       // Ignore: the projection on screen is still correct.
     }

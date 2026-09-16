@@ -44,12 +44,22 @@ const _kMaReturn = 'maReturn';
 const _kGrowth = 'growth';
 const _kYears = 'years';
 
-/// What the two extra pots are called, on their cards and in the summary.
-///
-/// Fixed rather than typed in: saved inputs are a map of numbers, so a name
-/// would be dropped on the next save and come back as the default anyway.
-const _secondPot = 'Second portfolio';
-const _thirdPot = 'Third portfolio';
+/// Keys the portfolio names are stored under, alongside the figures.
+const _kName1 = 'portfolioName1';
+const _kName2 = 'portfolioName2';
+const _kName3 = 'portfolioName3';
+
+/// What each portfolio is called until it is given a name of its own. Also
+/// what an emptied name field falls back to, so a portfolio is never nameless.
+const _defaultNames = <String, String>{
+  _kName1: 'Main portfolio',
+  _kName2: 'Second portfolio',
+  _kName3: 'Third portfolio',
+};
+
+/// Long enough for "Interactive Brokers", short enough to stay on one line
+/// beside a figure in the summary.
+const _nameLimit = 24;
 
 /// Projects savings and CPF forward, month by month.
 class CalculatorScreen extends StatefulWidget {
@@ -65,6 +75,7 @@ class CalculatorScreen extends StatefulWidget {
 class _CalculatorScreenState extends State<CalculatorScreen> {
   late final WatchlistStorage _storage = widget.storage ?? WatchlistStorage();
   final _fields = <String, TextEditingController>{};
+  final _names = <String, TextEditingController>{};
   bool _loading = true;
 
   /// Defaults chosen to be conservative where a guess would flatter the
@@ -108,19 +119,34 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       _fields[key] = TextEditingController()
         ..addListener(() => setState(() {}));
     }
+    for (final key in _defaultNames.keys) {
+      _names[key] = TextEditingController()..addListener(() => setState(() {}));
+    }
     _load();
   }
 
   Future<void> _load() async {
     final saved = await _storage.loadCalculatorInputs();
+    final names = await _storage.loadCalculatorNames();
     if (!mounted) return;
     setState(() {
       for (final entry in _defaults.entries) {
         final value = saved[entry.key] ?? entry.value;
         _fields[entry.key]!.text = value == 0 ? '' : _trim(value);
       }
+      for (final key in _defaultNames.keys) {
+        // A default is left as an empty field rather than typed in, so the
+        // hint shows through and there is nothing to clear before renaming.
+        _names[key]!.text = names[key] ?? '';
+      }
       _loading = false;
     });
+  }
+
+  /// What portfolio [key] is called: what was typed, or its default.
+  String _name(String key) {
+    final typed = _names[key]!.text.trim();
+    return typed.isEmpty ? _defaultNames[key]! : typed;
   }
 
   static String _trim(double value) => value == value.roundToDouble()
@@ -129,7 +155,7 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
 
   @override
   void dispose() {
-    for (final controller in _fields.values) {
+    for (final controller in [..._fields.values, ..._names.values]) {
       controller.dispose();
     }
     super.dispose();
@@ -158,15 +184,16 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       saPercent: _value(_kSaPercent),
       maPercent: _value(_kMaPercent),
       investmentReturnPercent: _value(_kInvestReturn),
+      investmentsLabel: _name(_kName1),
       extraPots: [
         InvestmentPot(
-          label: _secondPot,
+          label: _name(_kName2),
           starting: _value(_kStart2),
           monthly: _value(_kMonthly2),
           returnPercent: _value(_kReturn2),
         ),
         InvestmentPot(
-          label: _thirdPot,
+          label: _name(_kName3),
           starting: _value(_kStart3),
           monthly: _value(_kMonthly3),
           returnPercent: _value(_kReturn3),
@@ -181,9 +208,14 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
   }
 
   Future<void> _save() async {
-    await _storage.saveCalculatorInputs({
-      for (final key in _defaults.keys) key: _value(key),
-    });
+    await _storage.saveCalculatorInputs(
+      {for (final key in _defaults.keys) key: _value(key)},
+      names: {
+        for (final key in _defaultNames.keys)
+          if (_names[key]!.text.trim().isNotEmpty)
+            key: _names[key]!.text.trim(),
+      },
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('Saved.')));
@@ -324,7 +356,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               ),
             ],
           ]),
-          _card('Investing', [
+          // Headed by its name like the other two, because the summary lists
+          // all three side by side and one card that would not follow its own
+          // row there is the odd one out.
+          _card(_name(_kName1), [
+            _nameField(_kName1),
             _field(_kStartInvestments, 'Invested today'),
             _field(_kMonthlyInvestment, 'Monthly investment'),
             _field(_kInvestReturn, 'Expected annual return', suffix: '%'),
@@ -334,8 +370,8 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           // imported into these: they are for money this app does not track,
           // and a rate per pot is the point — averaging three portfolios into
           // one rate is the mistake this card exists to avoid.
-          _potCard(_secondPot, _kStart2, _kMonthly2, _kReturn2),
-          _potCard(_thirdPot, _kStart3, _kMonthly3, _kReturn3),
+          _potCard(_kName2, _kStart2, _kMonthly2, _kReturn2),
+          _potCard(_kName3, _kStart3, _kMonthly3, _kReturn3),
           _card('CPF — how it is split', [
             _field(
               _kAge,
@@ -476,6 +512,39 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
           const SizedBox(height: 10),
           ...children,
         ],
+      ),
+    );
+  }
+
+  /// The name a portfolio goes by, on its card and in the summary.
+  ///
+  /// Left empty rather than pre-filled with the default: the hint shows what
+  /// it will be called, and there is nothing to clear before typing.
+  Widget _nameField(String key) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextField(
+        controller: _names[key],
+        textCapitalization: TextCapitalization.words,
+        inputFormatters: [LengthLimitingTextInputFormatter(_nameLimit)],
+        style: TextStyle(color: c.text, fontSize: 15),
+        decoration: InputDecoration(
+          labelText: 'Name',
+          hintText: _defaultNames[key],
+          isDense: true,
+          labelStyle: TextStyle(color: c.textMuted, fontSize: 14),
+          filled: true,
+          fillColor: c.bg,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: c.border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(color: c.border),
+          ),
+        ),
       ),
     );
   }
@@ -732,9 +801,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     return 'age ${shifts.first}, then ${shifts.skip(1).join(', ')}';
   }
 
-  /// One extra investment pot: a balance, a monthly amount and its own rate.
-  Widget _potCard(String title, String start, String monthly, String rate) =>
-      _card(title, [
+  /// One extra investment pot: a name, a balance, a monthly amount and its
+  /// own rate. The card is headed by the name, which is the point of letting
+  /// it be typed — two cards both reading "portfolio" say nothing.
+  Widget _potCard(String name, String start, String monthly, String rate) =>
+      _card(_name(name), [
+        _nameField(name),
         _field(start, 'Invested today'),
         _field(monthly, 'Monthly investment'),
         _field(rate, 'Expected annual return', suffix: '%'),
