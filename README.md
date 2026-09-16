@@ -692,6 +692,18 @@ number rather than an old one.
 A holding scored but undated keeps its scores: the date is what is missing, not
 the judgement.
 
+**The age and the date, on two lines.** The row says how old a score is —
+`scored 3 weeks ago`, `· stale` past six months — and prints the date itself
+underneath, `16 Sep 2026`. They answer different questions: the age says whether
+earnings have overtaken the judgement, the date says whether it is the one you
+put in the sheet, and neither can be read off the other. Side by side on a
+phone-width row they do not both fit, and the half that gets cut is the date —
+so it gets a line to itself.
+
+The date is spelled, never all digits. `03/04/2026` is the ambiguity the
+importer refuses to read, and printing dates back in the form it refuses would
+be a strange thing for this app to do.
+
 **Which kind of missing, said in words.** A score with no date carries one of
 three messages, because they are fixed in three different places:
 

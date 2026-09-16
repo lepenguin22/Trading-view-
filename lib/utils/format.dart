@@ -164,6 +164,19 @@ String formatScoredAt(DateTime scoredAt, {DateTime? now}) {
   return 'scored ${years.floor()} years ago';
 }
 
+/// The calendar date a score was arrived at, e.g. "16 Sep 2026".
+///
+/// Spelled month, never all digits: 03/04/2026 is the ambiguity the importer
+/// refuses to read, and printing dates back in the form it refuses would be a
+/// strange thing for this app to do.
+///
+/// Shown alongside [formatScoredAt] rather than instead of it. The relative
+/// phrase answers "has this been overtaken by earnings", which is what the age
+/// is for; the date answers "is this the one I put in the sheet", which the
+/// relative phrase cannot.
+String formatScoredOn(DateTime scoredAt) =>
+    DateFormat('d MMM yyyy').format(scoredAt);
+
 /// A score is treated as stale past this age, and said to be.
 const scoreStaleAfter = Duration(days: 180);
 

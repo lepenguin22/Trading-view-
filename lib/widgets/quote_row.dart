@@ -334,46 +334,66 @@ class _Scores extends StatelessWidget {
       if (holding.moatScore != null) 'Moat ${holding.moatScore}',
     ];
 
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(
-          child: Text(
-            parts.join(' · '),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: tabularFigures.copyWith(
-              color: c.textMuted,
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                parts.join(' · '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: tabularFigures.copyWith(
+                  color: c.textMuted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                textAlign: TextAlign.right,
+                // A score without a date is never left looking timeless — and
+                // which kind of missing it is decides where to go and fix it.
+                scoredAt == null
+                    ? _noDate(holding.noDateReason)
+                    : stale
+                    ? '${formatScoredAt(scoredAt)} · stale'
+                    : formatScoredAt(scoredAt),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  // Staleness is said in words and shown by contrast, never by
+                  // colour: red already means a loss on this row, and a stale
+                  // date in the same red would read as a bad number rather
+                  // than an old one. Amber is no better — it sits too close to
+                  // the down-red under common colour vision deficiencies.
+                  color: stale ? c.textMuted : c.textFaint,
+                  fontSize: 11.5,
+                  fontStyle: FontStyle.italic,
+                  fontWeight: stale ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ],
+        ),
+        // The date itself, on its own line rather than beside the age.
+        // Together they are too long for a phone-width row next to the
+        // scores, and the half that would be cut is the date — the half that
+        // cannot be worked out from the other.
+        if (scoredAt != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              formatScoredOn(scoredAt),
+              textAlign: TextAlign.right,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: tabularFigures.copyWith(color: c.textFaint, fontSize: 11),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Flexible(
-          child: Text(
-            textAlign: TextAlign.right,
-            // A score without a date is never left looking timeless — and
-            // which kind of missing it is decides where to go and fix it.
-            scoredAt == null
-                ? _noDate(holding.noDateReason)
-                : stale
-                ? '${formatScoredAt(scoredAt)} · stale'
-                : formatScoredAt(scoredAt),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              // Staleness is said in words and shown by contrast, never by
-              // colour: red already means a loss on this row, and a stale date
-              // in the same red would read as a bad number rather than an old
-              // one. Amber is no better — it sits too close to the down-red
-              // under common colour vision deficiencies.
-              color: stale ? c.textMuted : c.textFaint,
-              fontSize: 11.5,
-              fontStyle: FontStyle.italic,
-              fontWeight: stale ? FontWeight.w600 : FontWeight.w400,
-            ),
-          ),
-        ),
       ],
     );
   }

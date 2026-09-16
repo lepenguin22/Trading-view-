@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -19,6 +20,7 @@ import 'package:ticker/state/watchlist.dart';
 import 'package:ticker/theme/app_theme.dart';
 import 'package:ticker/models/crossover.dart';
 import 'package:ticker/models/holding.dart';
+import 'package:ticker/utils/format.dart';
 import 'package:ticker/models/types.dart';
 import 'package:ticker/widgets/portfolio_summary.dart';
 import 'package:ticker/widgets/price_chart.dart';
@@ -1292,6 +1294,86 @@ void main() {
 
     expect(find.text('Fin 14/19 · Moat 11/14'), findsOneWidget);
     expect(find.text('scored 3 weeks ago'), findsOneWidget);
+    // The age and the date both, the date on its own line — the age says
+    // whether earnings have overtaken the score, the date says whether it is
+    // the one in the sheet, and neither answers for the other.
+    expect(find.text(formatScoredOn(scoredAt)), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('an undated score leaves no empty line where a date would be', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14,'
+          '"noDateReason":"noColumn"}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    // Only the message. A blank second line would be a gap with no cause.
+    expect(find.text('no date column'), findsOneWidget);
+    expect(find.textContaining(RegExp(r'\d{4}$')), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('the date gets a whole line, so a narrow phone cannot cut it', (
+    tester,
+  ) async {
+    // The reason the date is on its own line at all. Beside the age, sharing
+    // what is left of 360 logical pixels after "Fin 14/19 · Moat 11/14", the
+    // date is the half that gets cut — and it is the half that cannot be
+    // worked out from the other.
+    //
+    // Only the date is checked. Widget tests render in Ahem, where every
+    // glyph is a full em square, so "scored 9 months ago · stale" measures
+    // 317 logical pixels here against roughly 155 in a real font. Any
+    // assertion about that line would be measuring the test font. The date
+    // line has the full row to itself, which is wide enough to hold even the
+    // Ahem rendering — so what it proves holds outside the test too.
+    tester.view.physicalSize = const Size(360, 720);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    final scoredAt = DateTime.now().subtract(const Duration(days: 260));
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"costPerShare":123.45,'
+          '"financialScore":14,"moatScore":11,'
+          '"scoredAt":${scoredAt.millisecondsSinceEpoch}}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    // Rendered in full, not merely present: find.text matches a widget's data
+    // even when the paragraph ellipsized it on screen, so the check that
+    // means anything here is whether the line overran its one allowed line.
+    final date = find.text(formatScoredOn(scoredAt));
+    expect(find.textContaining('stale'), findsOneWidget);
+    expect(date, findsOneWidget);
+
+    // Rendered in full, not merely present: find.text matches a widget's data
+    // even when the paragraph ellipsized it on screen, so the check that
+    // means anything is whether the line overran its one allowed line.
+    final rendered = tester.renderObject<RenderParagraph>(date);
+    expect(rendered.didExceedMaxLines, isFalse, reason: 'the date was cut off');
+    expect(
+      rendered.getMaxIntrinsicWidth(double.infinity),
+      lessThan(rendered.size.width),
+      reason: 'the date line has room to spare',
+    );
 
     await teardown(tester);
   });

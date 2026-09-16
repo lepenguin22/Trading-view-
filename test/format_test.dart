@@ -2,6 +2,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ticker/utils/format.dart';
 
 void main() {
+  group('formatScoredOn', () {
+    test('spells the month, never the form the importer refuses', () {
+      expect(formatScoredOn(DateTime(2026, 9, 16)), '16 Sep 2026');
+      expect(formatScoredOn(DateTime(2026, 3, 4)), '4 Mar 2026');
+
+      // 03/04/2026 is the ambiguity the importer will not read. Printing a
+      // date back in that form would be a strange thing for this app to do,
+      // so the month is always spelled.
+      expect(formatScoredOn(DateTime(2026, 4, 3)), '3 Apr 2026');
+      expect(formatScoredOn(DateTime(2026, 4, 3)), isNot(contains('/')));
+    });
+  });
+
   group('formatScoredAt', () {
     final now = DateTime(2026, 9, 9);
     String at(int daysAgo) =>
