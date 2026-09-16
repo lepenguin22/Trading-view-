@@ -26,10 +26,42 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Future<void> type(WidgetTester tester, String label, String value) async {
-    await tester.enterText(find.widgetWithText(TextField, label), value);
+  /// Types [value] into the field labelled [label].
+  ///
+  /// Three cards carry the same field labels — "Invested today" and the rest
+  /// belong to each investment pot — so [within] says which card is meant.
+  /// Without it the first is taken, which is the Investing card: the pot every
+  /// test that predates the extra two is talking about.
+  Future<void> type(
+    WidgetTester tester,
+    String label,
+    String value, {
+    Finder? within,
+  }) async {
+    final field = find.widgetWithText(TextField, label);
+    await tester.enterText(
+      within == null
+          ? field.first
+          : find.descendant(of: within, matching: field),
+      value,
+    );
     await tester.pumpAndSettle();
   }
+
+  /// The card headed [title].
+  ///
+  /// Matched on the heading being the card's own first child, not on an
+  /// ancestor of any text reading [title]: a card's name can also appear as a
+  /// summary row inside another card, and an ancestor search would then hand
+  /// back whichever Column came first in the tree.
+  Finder card(String title) => find.byWidgetPredicate(
+    (w) =>
+        w is Column &&
+        w.children.isNotEmpty &&
+        w.children.first is Text &&
+        (w.children.first as Text).data == title,
+    description: 'card headed "$title"',
+  );
 
   /// The value shown on the row labelled [label].
   ///
@@ -70,18 +102,11 @@ void main() {
   }
 
   /// The card holding the projection summary.
-  Finder projection() => find
-      .ancestor(of: find.text('Projection'), matching: find.byType(Column))
-      .first;
+  Finder projection() => card('Projection');
 
   /// The card holding the CPF split. "MediSave" is an exact label in both this
   /// card and the summary above, so assertions about one must say which.
-  Finder splitCard() => find
-      .ancestor(
-        of: find.text('CPF — how it is split'),
-        matching: find.byType(Column),
-      )
-      .first;
+  Finder splitCard() => card('CPF — how it is split');
 
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
@@ -532,6 +557,112 @@ void main() {
           .text,
       '4300',
     );
+  });
+
+  group('extra investment pots', () {
+    testWidgets('a second portfolio compounds at its own rate', (tester) async {
+      await open(tester);
+      await type(tester, 'Invested today', '1000');
+      await type(tester, 'Expected annual return', '0');
+      await type(tester, 'Years', '10');
+
+      // One pot, flat: it is worth what was put in.
+      expect(
+        valueFor(tester, 'Investments', within: projection()),
+        r'$1,000.00',
+      );
+
+      await type(
+        tester,
+        'Invested today',
+        '1000',
+        within: card('Second portfolio'),
+      );
+      await type(
+        tester,
+        'Expected annual return',
+        '0',
+        within: card('Second portfolio'),
+      );
+      expect(
+        valueFor(tester, 'Investments', within: projection()),
+        r'$2,000.00',
+      );
+
+      // Raising only the second pot's rate must move only the second pot —
+      // proof the rate is per pot rather than shared or averaged.
+      await type(
+        tester,
+        'Expected annual return',
+        '12',
+        within: card('Second portfolio'),
+      );
+      expect(
+        valueFor(tester, 'Main portfolio', within: projection()),
+        r'$1,000.00',
+      );
+      expect(
+        _money(valueFor(tester, 'Second portfolio', within: projection())),
+        greaterThan(3000),
+      );
+    });
+
+    testWidgets('the pots are only broken out once two are in use', (
+      tester,
+    ) async {
+      await open(tester);
+      await type(tester, 'Invested today', '1000');
+
+      // One pot: the Investments row already says everything a breakdown
+      // would, so there is nothing to indent under it.
+      expect(find.text('Main portfolio'), findsNothing);
+      expect(find.text('Second portfolio'), findsOneWidget); // the card title
+
+      await type(
+        tester,
+        'Invested today',
+        '500',
+        within: card('Third portfolio'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Main portfolio'), findsOneWidget);
+      // The card title, plus the summary row now under Investments.
+      expect(find.text('Third portfolio'), findsNWidgets(2));
+      // The second pot is still empty, so it stays out of the breakdown.
+      expect(find.text('Second portfolio'), findsOneWidget);
+    });
+
+    testWidgets('the extra pots are saved and read back', (tester) async {
+      await open(tester);
+      await type(
+        tester,
+        'Invested today',
+        '2500',
+        within: card('Third portfolio'),
+      );
+
+      await tester.tap(find.byTooltip('Save these inputs'));
+      await tester.pumpAndSettle();
+      expect(
+        await WatchlistStorage().loadCalculatorInputs(),
+        containsPair('startInvestments3', 2500),
+      );
+
+      await open(tester);
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: card('Third portfolio'),
+                matching: find.widgetWithText(TextField, 'Invested today'),
+              ),
+            )
+            .controller!
+            .text,
+        '2500',
+      );
+    });
   });
 
   testWidgets('an empty form does not crash or claim a projection', (

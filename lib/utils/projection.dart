@@ -14,7 +14,7 @@ class ProjectionPoint {
     required this.month,
     required this.grossSalary,
     required this.takeHome,
-    required this.invested,
+    required this.potBalances,
     required this.oa,
     required this.sa,
     required this.ma,
@@ -31,8 +31,11 @@ class ProjectionPoint {
   /// Gross less the employee's CPF share.
   final double takeHome;
 
-  /// Investment balance at the end of this month.
-  final double invested;
+  /// Each investment pot's balance at the end of this month.
+  final List<double> potBalances;
+
+  /// Every pot together.
+  double get invested => potBalances.fold(0, (sum, v) => sum + v);
 
   /// Ordinary Account balance at the end of this month.
   final double oa;
@@ -55,6 +58,32 @@ class ProjectionPoint {
   double get total => invested + cpf;
 }
 
+/// One pot of investments: what is in it, what goes in monthly, and what it
+/// is assumed to earn.
+///
+/// Separate pots rather than one blended figure because they do not earn the
+/// same. A cash fund at 3% and equities at 7% averaged into a single rate
+/// would project a portfolio nobody holds, which is the same reason CPF's
+/// three accounts are kept apart.
+class InvestmentPot {
+  const InvestmentPot({
+    this.label = 'Main portfolio',
+    this.starting = 0,
+    this.monthly = 0,
+    this.returnPercent = 7,
+  });
+
+  final String label;
+  final double starting;
+  final double monthly;
+
+  /// Annual nominal return, compounded monthly.
+  final double returnPercent;
+
+  /// True when there is nothing here to project.
+  bool get isEmpty => starting == 0 && monthly == 0;
+}
+
 /// What a projection was asked for.
 class ProjectionInput {
   const ProjectionInput({
@@ -72,6 +101,7 @@ class ProjectionInput {
     this.saPercent = 6,
     this.maPercent = 8,
     this.investmentReturnPercent = 7,
+    this.extraPots = const [],
     this.oaReturnPercent = 2.5,
     this.saReturnPercent = 4,
     this.maReturnPercent = 4,
@@ -152,6 +182,23 @@ class ProjectionInput {
   /// Annual nominal returns, compounded monthly.
   final double investmentReturnPercent;
 
+  /// Further pots beyond the first.
+  ///
+  /// The first is not in this list because it is the one the imported
+  /// portfolio fills, and the one whose monthly contribution take-home pay is
+  /// measured against. The rest are plain numbers the user types.
+  final List<InvestmentPot> extraPots;
+
+  /// Every pot, the first included.
+  List<InvestmentPot> get pots => [
+    InvestmentPot(
+      starting: startingInvestments,
+      monthly: monthlyInvestment,
+      returnPercent: investmentReturnPercent,
+    ),
+    ...extraPots,
+  ];
+
   /// Per account, because they do not pay the same: the Ordinary Account
   /// earns less than Special and MediSave, and averaging them into one rate
   /// was the thing this split exists to stop.
@@ -218,14 +265,15 @@ double _fraction(double percent) => percent / 100;
 List<ProjectionPoint> project(ProjectionInput input) {
   final months = input.years * 12;
   var salary = input.grossMonthlySalary;
-  var invested = input.startingInvestments;
+  final pots = input.pots;
+  final balances = [for (final pot in pots) pot.starting];
+  final potRates = [for (final pot in pots) _fraction(pot.returnPercent) / 12];
   var oa = input.startingOa;
   var sa = input.startingSa;
   var ma = input.startingMa;
   var paidIn = 0.0;
   var paidToCpf = 0.0;
 
-  final monthlyInvestmentRate = _fraction(input.investmentReturnPercent) / 12;
   final monthlyOaRate = _fraction(input.oaReturnPercent) / 12;
   final monthlySaRate = _fraction(input.saReturnPercent) / 12;
   final monthlyMaRate = _fraction(input.maReturnPercent) / 12;
@@ -235,7 +283,7 @@ List<ProjectionPoint> project(ProjectionInput input) {
       month: 0,
       grossSalary: salary,
       takeHome: salary - salary * _fraction(input.employeeCpfPercent),
-      invested: invested,
+      potBalances: [...balances],
       oa: oa,
       sa: sa,
       ma: ma,
@@ -262,11 +310,15 @@ List<ProjectionPoint> project(ProjectionInput input) {
     final toSa = eligible * _fraction(share.sa);
     final toMa = eligible * _fraction(share.ma);
 
-    invested = invested * (1 + monthlyInvestmentRate) + input.monthlyInvestment;
+    // Each pot compounds at its own rate; they are only ever added together
+    // for display, never blended into one rate.
+    for (var i = 0; i < balances.length; i++) {
+      balances[i] = balances[i] * (1 + potRates[i]) + pots[i].monthly;
+      paidIn += pots[i].monthly;
+    }
     oa = oa * (1 + monthlyOaRate) + toOa;
     sa = sa * (1 + monthlySaRate) + toSa;
     ma = ma * (1 + monthlyMaRate) + toMa;
-    paidIn += input.monthlyInvestment;
     paidToCpf += toOa + toSa + toMa;
 
     out.add(
@@ -274,7 +326,7 @@ List<ProjectionPoint> project(ProjectionInput input) {
         month: month,
         grossSalary: salary,
         takeHome: salary - salary * _fraction(input.employeeCpfPercent),
-        invested: invested,
+        potBalances: [...balances],
         oa: oa,
         sa: sa,
         ma: ma,
@@ -290,7 +342,7 @@ List<ProjectionPoint> project(ProjectionInput input) {
 /// The end of a projection, summarised.
 class ProjectionSummary {
   const ProjectionSummary({
-    required this.invested,
+    required this.potBalances,
     required this.oa,
     required this.sa,
     required this.ma,
@@ -305,21 +357,26 @@ class ProjectionSummary {
   ) {
     final last = points.last;
     return ProjectionSummary(
-      invested: last.invested,
+      potBalances: last.potBalances,
       oa: last.oa,
       sa: last.sa,
       ma: last.ma,
       contributedToInvestments: last.contributedToInvestments,
       contributedToCpf: last.contributedToCpf,
       startingCapital:
-          input.startingInvestments +
+          input.pots.fold<double>(0, (sum, p) => sum + p.starting) +
           input.startingOa +
           input.startingSa +
           input.startingMa,
     );
   }
 
-  final double invested;
+  /// Each pot's closing balance, in the order they were given.
+  final List<double> potBalances;
+
+  /// Every pot together.
+  double get invested => potBalances.fold(0, (sum, v) => sum + v);
+
   final double oa;
   final double sa;
   final double ma;

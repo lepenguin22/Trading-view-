@@ -294,9 +294,9 @@ have no count until the sheet is imported again.
 
 ## The calculator
 
-Under the overflow menu. It projects two pots forward month by month and
-charts them as **four lines from a shared zero** — the three CPF accounts and
-investments.
+Under the overflow menu. It projects CPF and investments forward month by month
+and charts them as **four lines from a shared zero** — the three CPF accounts
+and investments.
 
 **Unstacked, and that is the point.** They were stacked, which made every line a
 running total: the Special Account, a third the size of the Ordinary Account,
@@ -431,6 +431,34 @@ answer. It says so and leaves the field to you.
 Holdings the total could not price are named beside the count, the same way the
 portfolio summary names them — a starting balance quietly short of a position
 would compound that gap for every year of the projection.
+
+### Three investment portfolios
+
+Two cards below Investing — **Second portfolio** and **Third portfolio** — take
+a balance, a monthly amount and a rate each. Nothing is imported into them:
+they are for money this app does not track, and they are plain numbers by
+design.
+
+**A rate per portfolio, not one rate across them.** Averaging three portfolios
+into a single rate is the mistake these cards exist to avoid: a cash account at
+1% and an index fund at 8% do not behave like two accounts at 4.5%, and over
+twenty years the difference is not small. Each pot compounds on its own and
+they are only ever added together for display.
+
+**They stay off the chart.** Six lines would need a palette that keeps six
+series apart for a colourblind reader and would smear on a phone-width plot, so
+the chart keeps one **Investments** line for all three. The pots behind it are
+listed indented beneath that row in the summary — and only once two of them
+have anything in them, since a breakdown of one pot says nothing the row above
+it did not.
+
+**Only the first portfolio is fed by the import**, and only the first is what
+"Less investing" measures against take-home pay. The other two are assumed to
+be funded from elsewhere; the calculator does not pretend to know where.
+
+Their names are fixed rather than typed in. Saved inputs are a map of numbers,
+so a name would be dropped on the next save and come back as the default
+anyway — better not to offer the field than to lose what is put in it.
 
 ### The retirement sums
 

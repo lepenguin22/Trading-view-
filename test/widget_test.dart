@@ -1229,9 +1229,13 @@ void main() {
     await tester.pumpAndSettle();
 
     // Taken into the field, converted, where it stays until taken again.
+    // The first "Invested today" on the screen: the extra investment pots
+    // below carry the same label, and the import only ever feeds this one.
     expect(
       tester
-          .widget<TextField>(find.widgetWithText(TextField, 'Invested today'))
+          .widget<TextField>(
+            find.widgetWithText(TextField, 'Invested today').first,
+          )
           .controller!
           .text,
       '1920.00',

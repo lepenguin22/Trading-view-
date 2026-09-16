@@ -21,6 +21,12 @@ const _kCeiling = 'ceiling';
 const _kMonthlyInvestment = 'monthlyInvestment';
 const _kExpenses = 'expenses';
 const _kStartInvestments = 'startInvestments';
+const _kStart2 = 'startInvestments2';
+const _kMonthly2 = 'monthlyInvestment2';
+const _kReturn2 = 'investReturn2';
+const _kStart3 = 'startInvestments3';
+const _kMonthly3 = 'monthlyInvestment3';
+const _kReturn3 = 'investReturn3';
 const _kFxRate = 'fxRate';
 const _kBrs = 'brs';
 const _kBrsGrowth = 'brsGrowth';
@@ -37,6 +43,13 @@ const _kSaReturn = 'saReturn';
 const _kMaReturn = 'maReturn';
 const _kGrowth = 'growth';
 const _kYears = 'years';
+
+/// What the two extra pots are called, on their cards and in the summary.
+///
+/// Fixed rather than typed in: saved inputs are a map of numbers, so a name
+/// would be dropped on the next save and come back as the default anyway.
+const _secondPot = 'Second portfolio';
+const _thirdPot = 'Third portfolio';
 
 /// Projects savings and CPF forward, month by month.
 class CalculatorScreen extends StatefulWidget {
@@ -64,6 +77,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     _kMonthlyInvestment: 0,
     _kExpenses: 0,
     _kStartInvestments: 0,
+    _kStart2: 0,
+    _kMonthly2: 0,
+    _kReturn2: 7,
+    _kStart3: 0,
+    _kMonthly3: 0,
+    _kReturn3: 7,
     _kFxRate: 0,
     _kBrs: brsBaseAmount,
     _kBrsGrowth: brsGrowthPercentDefault,
@@ -139,6 +158,20 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
       saPercent: _value(_kSaPercent),
       maPercent: _value(_kMaPercent),
       investmentReturnPercent: _value(_kInvestReturn),
+      extraPots: [
+        InvestmentPot(
+          label: _secondPot,
+          starting: _value(_kStart2),
+          monthly: _value(_kMonthly2),
+          returnPercent: _value(_kReturn2),
+        ),
+        InvestmentPot(
+          label: _thirdPot,
+          starting: _value(_kStart3),
+          monthly: _value(_kMonthly3),
+          returnPercent: _value(_kReturn3),
+        ),
+      ],
       oaReturnPercent: _value(_kOaReturn),
       saReturnPercent: _value(_kSaReturn),
       maReturnPercent: _value(_kMaReturn),
@@ -208,6 +241,11 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
               formatValue(summary.invested, widget.currency),
               swatch: c.pots[3],
             ),
+            // The chart draws investments as one line, so the pots behind it
+            // are listed here instead — indented, to read as a breakdown of
+            // the row above rather than as more bands on the chart. Empty
+            // pots stay out of the way until they are filled in.
+            ..._potRows(input, summary),
             _row(
               'MediSave',
               formatValue(summary.ma, widget.currency),
@@ -292,6 +330,12 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
             _field(_kInvestReturn, 'Expected annual return', suffix: '%'),
             ..._fromPortfolio(totals),
           ]),
+          // Two more pots, each compounding at its own rate. Nothing is
+          // imported into these: they are for money this app does not track,
+          // and a rate per pot is the point — averaging three portfolios into
+          // one rate is the mistake this card exists to avoid.
+          _potCard(_secondPot, _kStart2, _kMonthly2, _kReturn2),
+          _potCard(_thirdPot, _kStart3, _kMonthly3, _kReturn3),
           _card('CPF — how it is split', [
             _field(
               _kAge,
@@ -688,16 +732,44 @@ class _CalculatorScreenState extends State<CalculatorScreen> {
     return 'age ${shifts.first}, then ${shifts.skip(1).join(', ')}';
   }
 
+  /// One extra investment pot: a balance, a monthly amount and its own rate.
+  Widget _potCard(String title, String start, String monthly, String rate) =>
+      _card(title, [
+        _field(start, 'Invested today'),
+        _field(monthly, 'Monthly investment'),
+        _field(rate, 'Expected annual return', suffix: '%'),
+      ]);
+
+  /// The pots behind the Investments row, listed only when there is more than
+  /// one of them with anything in it.
+  List<Widget> _potRows(ProjectionInput input, ProjectionSummary summary) {
+    final pots = input.pots;
+    final used = [
+      for (var i = 0; i < pots.length; i++)
+        if (!pots[i].isEmpty) i,
+    ];
+    if (used.length < 2) return const [];
+    return [
+      for (final i in used)
+        _row(
+          pots[i].label,
+          formatValue(summary.potBalances[i], widget.currency),
+          indent: 17,
+        ),
+    ];
+  }
+
   Widget _row(
     String label,
     String value, {
     bool bold = false,
     Color? color,
     Color? swatch,
+    double indent = 0,
   }) {
     final c = context.colors;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
+      padding: EdgeInsets.fromLTRB(indent, 3, 0, 3),
       child: Row(
         children: [
           // The swatch carries the identity; the label beside it stays in ink
