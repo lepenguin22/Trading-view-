@@ -1275,6 +1275,89 @@ void main() {
     await teardown(tester);
   });
 
+  testWidgets('a valued holding shows the gap between price and fair value', (
+    tester,
+  ) async {
+    // feedResolving quotes every symbol at 100. Against a fair value of 200
+    // the price is half of it, so half the valuation is the cushion.
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"dcfValue":200}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(r'fair $200.00 · 50% below'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a price above the valuation says above, not a bare sign', (
+    tester,
+  ) async {
+    // Fair 80 against the same quoted 100: a quarter over what it is worth.
+    // The word is the point — a "-25%" here could be read either way, and
+    // backwards it inverts the decision the figure exists to inform.
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"dcfValue":80}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text(r'fair $80.00 · 25% above'), findsOneWidget);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a valuation shows without any scores beside it', (tester) async {
+    // The two arrive independently. A holding valued but unscored must not be
+    // told its scores have no date — a complaint about something it never
+    // claimed to have.
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"dcfValue":200}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('fair'), findsOneWidget);
+    expect(find.textContaining('no date'), findsNothing);
+    expect(find.textContaining('Fin '), findsNothing);
+
+    await teardown(tester);
+  });
+
+  testWidgets('a holding with no valuation claims none', (tester) async {
+    SharedPreferences.setMockInitialValues({
+      'ticker.watchlist.symbols.v1': '[]',
+      'ticker.portfolio.holdings.v1':
+          '[{"symbol":"AAPL","shares":10,"financialScore":14}]',
+    });
+
+    await tester.pumpWidget(appWith(feedResolving()));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Portfolio (1)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fin 14/19'), findsOneWidget);
+    expect(find.textContaining('fair'), findsNothing);
+
+    await teardown(tester);
+  });
+
   testWidgets('a holding shows its checklist scores and their age', (
     tester,
   ) async {

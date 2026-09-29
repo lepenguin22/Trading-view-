@@ -80,6 +80,25 @@ const _moatScoreLeadingWords = {'moat', 'economic'};
 const _scoredHeaders = {'scored', 'score date', 'date scored', 'reviewed'};
 const _scoredLeadingWords = {'scored', 'analysed', 'analyzed', 'reviewed'};
 
+/// Header names that mark a per-share fair value from a discounted cash flow.
+///
+/// Every one of these names a value *per share*, which is the whole point: the
+/// figure is put against the quoted price, and a whole-company valuation read
+/// as a per-share one would be out by a factor of the share count — billions,
+/// not percent. So "market cap", "enterprise value" and "equity value" are
+/// absent on purpose, and "value" alone is not matched either: a sheet's
+/// "Present value" and "Total value" columns are positions, not valuations.
+const _dcfHeaders = {
+  'dcf',
+  'dcf value',
+  'dcf per share',
+  'fair value',
+  'intrinsic value',
+  'valuation',
+  'target price',
+};
+const _dcfLeadingWords = {'dcf', 'fair', 'intrinsic'};
+
 /// The scales the framework scores on, used only when a cell gives a bare
 /// number and the sheet has not said what it was out of.
 ///
@@ -162,6 +181,14 @@ List<Holding> parseHoldingsCsv(String csv) {
     leading: _scoredLeadingWords,
     skip: claimed,
   );
+  if (scoredAtColumn != null) claimed.add(scoredAtColumn);
+
+  final dcfColumn = _findColumn(
+    headerRow,
+    exact: _dcfHeaders,
+    leading: _dcfLeadingWords,
+    skip: claimed,
+  );
 
   final seen = <String>{};
   final out = <Holding>[];
@@ -204,6 +231,11 @@ List<Holding> parseHoldingsCsv(String csv) {
         noDateReason: scoredAt != null
             ? null
             : _noDateReason(scoredAtColumn, scoredCell),
+        // parseMoney rather than parseShares: it strips a currency symbol and
+        // refuses zero and negatives, and a fair value is none of those.
+        dcfValue: dcfColumn == null
+            ? null
+            : parseMoney(_cell(rows[r], dcfColumn)),
       ),
     );
   }

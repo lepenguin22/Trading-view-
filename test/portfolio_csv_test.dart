@@ -420,6 +420,66 @@ void main() {
       expect(holding.noDateReason, NoDateReason.unreadable);
     });
 
+    test('a DCF value is read per share, symbols and separators and all', () {
+      final byTicker = {for (final h in parseHoldingsCsv(sheet)) h.symbol: h};
+
+      expect(byTicker['AAA']!.dcfValue, 130);
+      // "$1,500.00" — a currency symbol and a thousands separator, the way a
+      // hand-kept sheet writes one.
+      expect(byTicker['BBB']!.dcfValue, 1500);
+      expect(byTicker['CCC']!.dcfValue, 75);
+    });
+
+    test('a blank or unreadable valuation is null, never a zero', () {
+      // A zero fair value would make every margin of safety off it nonsense,
+      // and a dash is how a sheet says "not valued" rather than "worth
+      // nothing".
+      final byTicker = {for (final h in parseHoldingsCsv(sheet)) h.symbol: h};
+
+      expect(byTicker['DDD.L']!.dcfValue, isNull);
+      expect(byTicker['BRK-B']!.dcfValue, isNull);
+    });
+
+    test('a sheet with no DCF column simply has none', () {
+      const csv =
+          'Ticker,Shares bought,Financial score\n'
+          'AAA,10,12/17\n';
+      expect(parseHoldingsCsv(csv).single.dcfValue, isNull);
+    });
+
+    test('a whole-company valuation is not matched as a per-share one', () {
+      // The trap worth guarding: read as per share, a market capitalisation
+      // would be out by a factor of the share count — billions, not percent.
+      // None of these headers claims a per-share figure, so none is taken.
+      for (final heading in [
+        'Market cap',
+        'Enterprise value',
+        'Equity value',
+        'Present value',
+        'Total value',
+      ]) {
+        final holding = parseHoldingsCsv(
+          'Ticker,Shares bought,$heading\nAAA,10,900000000000\n',
+        ).single;
+        expect(
+          holding.dcfValue,
+          isNull,
+          reason: '"$heading" does not name a per-share valuation',
+        );
+      }
+    });
+
+    test('the valuation column does not disturb the columns before it', () {
+      // It sits last in the fixture, after the date. A column claimed twice is
+      // the failure this guards: the cost search runs first and must keep it.
+      final byTicker = {for (final h in parseHoldingsCsv(sheet)) h.symbol: h};
+
+      expect(byTicker['AAA']!.costPerShare, 100);
+      expect(byTicker['AAA']!.shares, 10);
+      expect(byTicker['AAA']!.financialScore, const Score(14, 19));
+      expect(byTicker['AAA']!.scoredAt, DateTime(2026, 8, 15));
+    });
+
     test('a holding the sheet never scored carries no score', () {
       // A dash in the score column is how a sheet says "not assessed". It is
       // not a zero, which would read as the worst possible judgement.

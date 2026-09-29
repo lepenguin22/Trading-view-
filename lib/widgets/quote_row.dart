@@ -196,7 +196,7 @@ class QuoteRow extends StatelessWidget {
                 // left column these three figures shared about half the width
                 // with the symbol and company name, and ellipsised; the full
                 // width fits them at a readable size with air between them.
-                if (held != null || (holding?.hasScores ?? false)) ...[
+                if (held != null || (holding?.hasAnalysis ?? false)) ...[
                   const SizedBox(height: 10),
                   Container(height: 1, color: c.border),
                   const SizedBox(height: 9),
@@ -210,9 +210,13 @@ class QuoteRow extends StatelessWidget {
                     currency: q?.currency ?? 'USD',
                     stale: stale,
                   ),
-                if (holding?.hasScores ?? false) ...[
+                if (holding?.hasAnalysis ?? false) ...[
                   if (held != null) const SizedBox(height: 7),
-                  _Scores(holding: holding!),
+                  _Scores(
+                    holding: holding!,
+                    price: q?.price,
+                    currency: q?.currency ?? 'USD',
+                  ),
                 ],
               ],
             ),
@@ -309,21 +313,42 @@ String _noDate(NoDateReason? reason) => switch (reason) {
   null => 'no date',
 };
 
+/// The calendar date a score was arrived at, laid out the same either way.
+Widget _scoredOn(DateTime scoredAt, AppColors c) => Text(
+  formatScoredOn(scoredAt),
+  textAlign: TextAlign.right,
+  maxLines: 1,
+  overflow: TextOverflow.ellipsis,
+  style: tabularFigures.copyWith(color: c.textFaint, fontSize: 11),
+);
+
 /// The analysis checklist scores, and how old they are.
 ///
 /// The age is never omitted when it is known: a score is a snapshot of a
 /// judgement, and one from six months ago may predate two earnings reports.
 /// Presenting it without its date would be the way this misleads.
 class _Scores extends StatelessWidget {
-  const _Scores({required this.holding});
+  const _Scores({
+    required this.holding,
+    required this.price,
+    required this.currency,
+  });
 
   final Holding holding;
+
+  /// The quoted price, or null before one has arrived. Only the margin of
+  /// safety needs it; the fair value is shown either way.
+  final double? price;
+  final String currency;
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final scoredAt = holding.scoredAt;
     final stale = scoredAt != null && isScoreStale(scoredAt);
+    final fair = holding.dcfValue;
+    final quoted = price;
+    final margin = quoted == null ? null : holding.marginOfSafetyAt(quoted);
 
     // Each score carries its own scale, so both halves come from the sheet.
     // The framework drops criteria that do not apply to a company, so one
@@ -337,61 +362,86 @@ class _Scores extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                parts.join(' · '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: tabularFigures.copyWith(
-                  color: c.textMuted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+        // Only when there are scores. A holding carrying a valuation and no
+        // score would otherwise be told its scores had no date, which is a
+        // complaint about something it never claimed to have.
+        if (holding.hasScores)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  parts.join(' · '),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: tabularFigures.copyWith(
+                    color: c.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                textAlign: TextAlign.right,
-                // A score without a date is never left looking timeless — and
-                // which kind of missing it is decides where to go and fix it.
-                scoredAt == null
-                    ? _noDate(holding.noDateReason)
-                    : stale
-                    ? '${formatScoredAt(scoredAt)} · stale'
-                    : formatScoredAt(scoredAt),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  // Staleness is said in words and shown by contrast, never by
-                  // colour: red already means a loss on this row, and a stale
-                  // date in the same red would read as a bad number rather
-                  // than an old one. Amber is no better — it sits too close to
-                  // the down-red under common colour vision deficiencies.
-                  color: stale ? c.textMuted : c.textFaint,
-                  fontSize: 11.5,
-                  fontStyle: FontStyle.italic,
-                  fontWeight: stale ? FontWeight.w600 : FontWeight.w400,
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  textAlign: TextAlign.right,
+                  // A score without a date is never left looking timeless —
+                  // and which kind of missing it is decides where to go and
+                  // fix it.
+                  scoredAt == null
+                      ? _noDate(holding.noDateReason)
+                      : stale
+                      ? '${formatScoredAt(scoredAt)} · stale'
+                      : formatScoredAt(scoredAt),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    // Staleness is said in words and shown by contrast, never
+                    // by colour: red already means a loss on this row, and a
+                    // stale date in the same red would read as a bad number
+                    // rather than an old one. Amber is no better — it sits too
+                    // close to the down-red under common colour vision
+                    // deficiencies.
+                    color: stale ? c.textMuted : c.textFaint,
+                    fontSize: 11.5,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: stale ? FontWeight.w600 : FontWeight.w400,
+                  ),
                 ),
               ),
-            ),
-          ],
-        ),
-        // The date itself, on its own line rather than beside the age.
-        // Together they are too long for a phone-width row next to the
-        // scores, and the half that would be cut is the date — the half that
-        // cannot be worked out from the other.
-        if (scoredAt != null)
+            ],
+          ),
+        // The valuation and the date, sharing one line. The date was alone on
+        // it and right-aligned, so the fair value costs no height at all — and
+        // beside the scores above there was no room for either.
+        if (fair != null || scoredAt != null)
           Padding(
             padding: const EdgeInsets.only(top: 2),
-            child: Text(
-              formatScoredOn(scoredAt),
-              textAlign: TextAlign.right,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: tabularFigures.copyWith(color: c.textFaint, fontSize: 11),
+            child: Row(
+              children: [
+                if (fair != null)
+                  Expanded(
+                    child: Text(
+                      formatFairValue(fair, currency, margin),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: tabularFigures.copyWith(
+                        color: c.textMuted,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                if (fair != null && scoredAt != null) const SizedBox(width: 10),
+                if (scoredAt != null)
+                  // Expanded only when the date is alone on the line, so it
+                  // spans and right-aligns the way it did before the valuation
+                  // joined it. Beside a valuation it takes its own width and
+                  // lets the valuation have the rest: an Expanded on both
+                  // splits the line in half and cuts the date short.
+                  if (fair == null)
+                    Expanded(child: _scoredOn(scoredAt, c))
+                  else
+                    _scoredOn(scoredAt, c),
+              ],
             ),
           ),
       ],

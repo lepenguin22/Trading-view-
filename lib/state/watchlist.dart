@@ -419,6 +419,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
           moatScore: raw.moatScore,
           scoredAt: raw.scoredAt,
           noDateReason: raw.noDateReason,
+          dcfValue: raw.dcfValue,
         ),
       );
     }

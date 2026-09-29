@@ -2,6 +2,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ticker/utils/format.dart';
 
 void main() {
+  group('formatFairValue', () {
+    test('spells the direction rather than leaving it to a sign', () {
+      // A bare "+19%" could be read as cheap or as expensive, and reading a
+      // margin of safety backwards inverts the decision it informs.
+      expect(formatFairValue(420, 'USD', 0.19), r'fair $420.00 · 19% below');
+      expect(formatFairValue(420, 'USD', -0.08), r'fair $420.00 · 8% above');
+    });
+
+    test('a price that has caught the valuation says so', () {
+      // Not "0% below", which reads as a margin that is merely small.
+      expect(formatFairValue(420, 'USD', 0), r'fair $420.00 · at fair value');
+      expect(
+        formatFairValue(420, 'USD', 0.002),
+        r'fair $420.00 · at fair value',
+      );
+    });
+
+    test('with no price to compare, the valuation stands alone', () {
+      expect(formatFairValue(420, 'USD', null), r'fair $420.00');
+    });
+  });
+
   group('formatScoredOn', () {
     test('spells the month, never the form the importer refuses', () {
       expect(formatScoredOn(DateTime(2026, 9, 16)), '16 Sep 2026');
