@@ -704,6 +704,52 @@ The date is spelled, never all digits. `03/04/2026` is the ambiguity the
 importer refuses to read, and printing dates back in the form it refuses would
 be a strange thing for this app to do.
 
+### The DCF, and the margin of safety
+
+A `DCF value` column gives a **per-share fair value**, and the row prints it
+beside how far the quoted price sits from it:
+
+```
+Fin 12/17 · Moat 8/14         scored today
+fair $420.00 · 19% below       16 Sep 2026
+```
+
+It costs no height. The date was alone on that second line and right-aligned,
+so the valuation moved into space that was already there.
+
+**Per share, and only per share.** Accepted headings are `DCF`, `DCF value`,
+`DCF per share`, `Fair value`, `Intrinsic value`, `Valuation`, `Target price`,
+or anything starting `DCF…`, `Fair…` or `Intrinsic…`. `Market cap`,
+`Enterprise value`, `Equity value` and a bare `Value` are deliberately **not**
+matched: a whole-company figure read as a per-share one is wrong by a factor of
+the share count — billions out, not percent — and a sheet's `Present value` or
+`Total value` column is a position, not a valuation.
+
+**The direction is spelled out, never left to a sign.** `19% below`, `25%
+above`. A margin of safety is the one figure on this screen where a bare `+19%`
+could be read as cheap or as expensive, and reading it backwards inverts the
+decision it exists to inform. A price that has caught the valuation says `at
+fair value` rather than `0% below`, which would read as a margin that is merely
+small.
+
+**Measured against fair value, not against price.** A $50 price on a $100
+valuation is a 50% margin, not 100%. Dividing by the price is the easy slip and
+it flatters every cheap-looking holding.
+
+**No colour.** For the same reason the staleness label carries none: red on this
+row already means a price loss, and a second red meaning "above fair value"
+would be read as a third bad number rather than a valuation. The words carry it.
+Say if you would rather have green and red here — it is one line to change.
+
+**Zero and negative are refused, on import and again on load.** A fair value of
+nothing is not a valuation, and every margin of safety measured off it would be
+nonsense. A `-` in the column is how a sheet says "not valued", and leaves the
+holding with no valuation rather than a worthless one.
+
+The valuation and the scores arrive independently: a holding with one and not
+the other still shows what it has, and a valued-but-unscored holding is never
+told its scores have no date.
+
 **Which kind of missing, said in words.** A score with no date carries one of
 three messages, because they are fixed in three different places:
 

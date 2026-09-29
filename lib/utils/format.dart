@@ -164,6 +164,29 @@ String formatScoredAt(DateTime scoredAt, {DateTime? now}) {
   return 'scored ${years.floor()} years ago';
 }
 
+/// A fair value and how far the price sits from it, e.g.
+/// "fair $420.00 · 19% below".
+///
+/// The direction is spelled out rather than left to a sign. A margin of safety
+/// is the one figure here where a bare "+19%" could be read either way — as
+/// cheap or as expensive — and reading it backwards would invert the decision
+/// it exists to inform.
+///
+/// [margin] is a fraction, positive when the price is under [fair]. Null means
+/// no price to compare, and the fair value is given alone rather than dressed
+/// up as a verdict.
+String formatFairValue(double fair, String currency, double? margin) {
+  final value = 'fair ${formatPrice(fair, currency)}';
+  if (margin == null) return value;
+
+  final percent = (margin.abs() * 100).round();
+  // Rounded to nothing at a fraction of a percent: "0% below" reads as a
+  // margin that is merely small, when the honest statement is that the price
+  // has caught the valuation.
+  if (percent == 0) return '$value · at fair value';
+  return '$value · $percent% ${margin > 0 ? 'below' : 'above'}';
+}
+
 /// The calendar date a score was arrived at, e.g. "16 Sep 2026".
 ///
 /// Spelled month, never all digits: 03/04/2026 is the ambiguity the importer

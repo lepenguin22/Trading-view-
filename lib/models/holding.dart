@@ -36,6 +36,7 @@ class Holding {
     this.moatScore,
     this.scoredAt,
     this.noDateReason,
+    this.dcfValue,
   });
 
   final String symbol;
@@ -75,8 +76,42 @@ class Holding {
   /// rather than any particular one of the three.
   final NoDateReason? noDateReason;
 
+  /// Fair value per share, from a discounted cash flow the sheet carries.
+  ///
+  /// Per share, so it stands directly against the quoted price. A whole-company
+  /// figure read as this would be wrong by a factor of the share count, which
+  /// is why the importer matches only headers naming a per-share valuation.
+  ///
+  /// In the share's own currency, which is what a per-share valuation means: a
+  /// Singapore stock is valued in Singapore dollars. That is also what keeps
+  /// [marginOfSafetyAt] honest without an exchange rate — both sides of it are
+  /// in one currency, and what comes out is a ratio regardless.
+  ///
+  /// Recorded, never computed. A discounted cash flow needs cash-flow
+  /// projections and a discount rate, which are judgements rather than data,
+  /// and no price feed carries either.
+  final double? dcfValue;
+
+  /// How far below fair value [price] sits, as a fraction of fair value.
+  ///
+  /// Positive means the price is under the valuation — the margin of safety a
+  /// buyer has. Negative means it is over, and there is none.
+  ///
+  /// Null when the sheet carries no valuation, or the price cannot be compared
+  /// to it. Null rather than zero for both: "no margin of safety" and "no
+  /// opinion on this company" are different claims, and a zero would state the
+  /// first when the truth is the second.
+  double? marginOfSafetyAt(double price) {
+    final fair = dcfValue;
+    if (fair == null || fair <= 0 || !price.isFinite || price <= 0) return null;
+    return (fair - price) / fair;
+  }
+
   /// True when either score exists.
   bool get hasScores => financialScore != null || moatScore != null;
+
+  /// True when the sheet carried anything the analysis tier can show.
+  bool get hasAnalysis => hasScores || dcfValue != null;
 
   /// Market value at [price], or null when the quantity is not known.
   double? valueAt(double price) {
@@ -109,6 +144,7 @@ class Holding {
     Score? moatScore,
     DateTime? scoredAt,
     NoDateReason? noDateReason,
+    double? dcfValue,
   }) => Holding(
     symbol: symbol ?? this.symbol,
     shares: shares ?? this.shares,
@@ -117,6 +153,7 @@ class Holding {
     moatScore: moatScore ?? this.moatScore,
     scoredAt: scoredAt ?? this.scoredAt,
     noDateReason: noDateReason ?? this.noDateReason,
+    dcfValue: dcfValue ?? this.dcfValue,
   );
 
   Map<String, dynamic> toJson() => {
@@ -127,6 +164,7 @@ class Holding {
     if (moatScore != null) 'moatScore': moatScore!.toJson(),
     if (scoredAt != null) 'scoredAt': scoredAt!.millisecondsSinceEpoch,
     if (noDateReason != null) 'noDateReason': noDateReason!.name,
+    if (dcfValue != null) 'dcfValue': dcfValue,
   };
 
   static Holding? fromJson(Object? raw) {
@@ -136,6 +174,7 @@ class Holding {
     final shares = raw['shares'];
     final cost = raw['costPerShare'];
     final scoredAt = raw['scoredAt'];
+    final dcf = raw['dcfValue'];
     return Holding(
       symbol: symbol,
       shares: shares is num && shares.isFinite ? shares.toDouble() : null,
@@ -151,6 +190,9 @@ class Holding {
           ? DateTime.fromMillisecondsSinceEpoch(scoredAt.toInt())
           : null,
       noDateReason: _reasonFrom(raw['noDateReason']),
+      // Bounds re-checked on load as well: a stored zero or negative is not a
+      // fair value, and would turn every margin of safety off it into nonsense.
+      dcfValue: dcf is num && dcf.isFinite && dcf > 0 ? dcf.toDouble() : null,
     );
   }
 
@@ -175,7 +217,8 @@ class Holding {
       other.financialScore == financialScore &&
       other.moatScore == moatScore &&
       other.scoredAt == scoredAt &&
-      other.noDateReason == noDateReason;
+      other.noDateReason == noDateReason &&
+      other.dcfValue == dcfValue;
 
   @override
   int get hashCode => Object.hash(
@@ -186,6 +229,7 @@ class Holding {
     moatScore,
     scoredAt,
     noDateReason,
+    dcfValue,
   );
 
   @override
