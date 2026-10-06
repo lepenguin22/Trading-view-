@@ -704,6 +704,71 @@ The date is spelled, never all digits. `03/04/2026` is the ambiguity the
 importer refuses to read, and printing dates back in the form it refuses would
 be a strange thing for this app to do.
 
+### Exchange prefixes, and one cell for two feeds
+
+A sheet built on `GOOGLEFINANCE()` and this app read different price feeds, and
+the two spell the same listing differently. Google wants `LON:SPYL`; Yahoo wants
+`SPYL.L`. Pick either and something breaks — the sheet stops pricing the
+holding, or the app does.
+
+So the importer **translates Google Finance's exchange prefix into Yahoo's
+suffix**. Write `LON:SPYL` in the ticker cell and both work: the sheet prices
+it, and the app looks up `SPYL.L`. US exchanges (`NASDAQ:`, `NYSE:`,
+`NYSEARCA:` and the rest) lose the prefix entirely, because Yahoo takes those
+bare. Roughly forty exchange codes are mapped, across Europe, Asia-Pacific and
+the Americas.
+
+**A bare symbol is not a safe fallback, and that is the point.** `SPYL` alone is
+the SPDR S&P 500 UCITS ETF to Google and a *different SPDR fund* to Yahoo —
+there is no US listing for it, so a bare lookup lands somewhere else entirely.
+An exchange code the app does not know is therefore kept whole: `XYZ:SPYL` goes
+to the feed as written, gets rejected by name, and the import screen prints
+which cell to fix. Stripping it to `SPYL` would have priced the wrong fund in
+silence.
+
+**A numeric ticker is a ticker when it has an exchange.** `HKG:0700` is Tencent.
+A bare `0700` is still refused, because in a spreadsheet column that is a row
+number — the prefix is what tells the two apart.
+
+### When the sheet and the feed disagree
+
+The importer reads your sheet's own price column — `Current Stock Price` and
+similar — and does nothing with it except **disagree**. Holdings are valued from
+the feed, never from the sheet. The sheet's figure is kept only to compare, and
+a large gap means the two are almost certainly looking at different securities:
+
+```
+Check these tickers
+SPYL — sheet $19.15, feed $112.50
+```
+
+This is the one import failure nothing else can see. A wrong ticker that the
+feed happens to recognise imports cleanly, prices confidently, and is wrong.
+
+**Why price and not name.** The obvious check is to compare your sheet's company
+name against the feed's, and it does not work. Sheet names are abbreviated by
+hand — `Taiwan Semicndctr Mnufctrng Co Ltd` against the feed's
+`Taiwan Semiconductor Manufacturing Company Limited` — so any test strict
+enough to catch a real mismatch cries wolf on half the portfolio. Worse, it
+misses the case that matters: `SPDR S&P 500 UCITS ETF` and `SPDR MSCI World
+UCITS ETF` share most of their words. Two prices for the same security agree to
+within a few per cent, or they are not the same security.
+
+**The tolerance is a quarter, deliberately generous.** A sheet's price is a
+snapshot from whenever it last recalculated, so a day of drift, a dividend or an
+intraday move must never trip it. Twenty-five per cent is far more than any of
+those and far less than the gap between two different funds.
+
+**It is a prompt, not an error.** The holding imports and prices normally; a
+doubt about a ticker is not grounds to drop a position the sheet says you hold.
+Both figures are shown so you can see which one looks wrong. A holding the sheet
+does not price, or one the feed could not reach, is never accused — one price is
+no evidence.
+
+A bare `Price` column is deliberately not matched: on a hand-kept sheet it is as
+likely to mean what was paid as what it trades at now, and reading a cost column
+as a live price would raise a warning on every row.
+
 ### The DCF, and the margin of safety
 
 A `DCF value` column gives a **per-share fair value**, and the row prints it
