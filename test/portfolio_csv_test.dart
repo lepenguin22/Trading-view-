@@ -590,6 +590,73 @@ void main() {
     });
   });
 
+  group('exchange prefixes', () {
+    test("translates Google Finance's prefix into Yahoo's suffix", () {
+      // One cell has to serve both: a sheet built on GOOGLEFINANCE() holds
+      // LON:SPYL, and Yahoo wants SPYL.L.
+      expect(normaliseTicker('LON:SPYL'), 'SPYL.L');
+      expect(normaliseTicker('lon:spyl'), 'SPYL.L');
+      expect(normaliseTicker('SGX:D05'), 'D05.SI');
+      expect(normaliseTicker('ETR:SPYL'), 'SPYL.DE');
+      expect(normaliseTicker('TSE:SHOP'), 'SHOP.TO');
+      expect(normaliseTicker('HKG:0700'), '0700.HK');
+    });
+
+    test('US exchanges lose the prefix, because Yahoo takes them bare', () {
+      expect(normaliseTicker('NASDAQ:AAPL'), 'AAPL');
+      expect(normaliseTicker('NYSE:V'), 'V');
+      expect(normaliseTicker('NYSEARCA:SPY'), 'SPY');
+    });
+
+    test('an unknown exchange is kept whole, never stripped to the symbol', () {
+      // The trap this exists for: a bare SPYL is the SPDR S&P 500 UCITS ETF
+      // to Google and a different SPDR fund to Yahoo. Stripping the exchange
+      // would silently price the wrong one; keeping it whole makes the feed
+      // reject it by name, which the import screen then prints.
+      expect(normaliseTicker('XYZ:SPYL'), 'XYZ:SPYL');
+      expect(normaliseTicker('LSE:SPYL'), 'LSE:SPYL');
+    });
+
+    test('a colon with nothing either side is not a ticker', () {
+      expect(normaliseTicker(':AAPL'), isNull);
+      expect(normaliseTicker('NASDAQ:'), isNull);
+      expect(normaliseTicker('LON:Total value'), isNull);
+    });
+
+    test('a plain symbol is untouched', () {
+      expect(normaliseTicker('AAPL'), 'AAPL');
+      expect(normaliseTicker('DDD.L'), 'DDD.L');
+      expect(normaliseTicker('BRK-B'), 'BRK-B');
+    });
+  });
+
+  group("the sheet's own price", () {
+    test('is read from a column that names it as current', () {
+      final byTicker = {for (final h in parseHoldingsCsv(sheet)) h.symbol: h};
+      // The fixture's "Current Stock Price" column.
+      expect(byTicker['AAA']!.sheetPrice, 110);
+      expect(byTicker['BBB']!.sheetPrice, 180);
+    });
+
+    test('a bare "Price" column is not taken for a live price', () {
+      // On a hand-kept sheet it is as likely to mean what was paid. Reading a
+      // cost column as a live price would raise a warning on every row.
+      const csv = 'Ticker,Shares bought,Price\nAAA,10,100.00\n';
+      expect(parseHoldingsCsv(csv).single.sheetPrice, isNull);
+    });
+
+    test('a sheet with no price column simply has none', () {
+      const csv = 'Ticker,Shares bought\nAAA,10\n';
+      expect(parseHoldingsCsv(csv).single.sheetPrice, isNull);
+    });
+
+    test('it does not disturb the cost column beside it', () {
+      final byTicker = {for (final h in parseHoldingsCsv(sheet)) h.symbol: h};
+      expect(byTicker['AAA']!.costPerShare, 100);
+      expect(byTicker['AAA']!.sheetPrice, 110);
+    });
+  });
+
   group('normaliseTicker', () {
     test('accepts the symbol shapes the feed uses', () {
       expect(normaliseTicker('aapl'), 'AAPL');

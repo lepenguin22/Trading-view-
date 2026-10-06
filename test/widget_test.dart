@@ -1736,6 +1736,98 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('a sheet and feed that disagree on price say which ticker', (
+    tester,
+  ) async {
+    // The case this exists for: a bare SPYL is the SPDR S&P 500 UCITS ETF to
+    // a sheet and a different fund to Yahoo, so both price it and neither
+    // agrees. feedResolving quotes everything at 100; the sheet says 19.15.
+    SharedPreferences.setMockInitialValues({});
+
+    final model = await pumpImportScreen(
+      tester,
+      feed: feedResolving(),
+      source: sheetReturning(
+        'Ticker,Shares bought,Current Stock Price\n'
+        'SPYL,5,19.15\n'
+        'AAPL,10,100.00\n',
+      ),
+    );
+
+    await tester.enterText(
+      find.byType(TextField),
+      'https://docs.google.com/spreadsheets/d/e/x/pub?output=csv',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check these tickers'), findsOneWidget);
+    expect(find.textContaining('SPYL — sheet'), findsOneWidget);
+    // AAPL's two prices agree, so it is not accused of anything.
+    expect(find.textContaining('AAPL — sheet'), findsNothing);
+    // Both are still imported: the sheet says what is held, and a doubt about
+    // the ticker is not grounds to drop the holding.
+    expect(model.portfolioSymbols, ['SPYL', 'AAPL']);
+
+    model.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('a day of price drift is not called a mismatch', (tester) async {
+    // The sheet's price is a snapshot from its last recalculation. A few per
+    // cent of drift must never raise a warning, or the warning is noise.
+    SharedPreferences.setMockInitialValues({});
+
+    final model = await pumpImportScreen(
+      tester,
+      feed: feedResolving(),
+      source: sheetReturning(
+        'Ticker,Shares bought,Current Stock Price\nAAPL,10,96.00\n',
+      ),
+    );
+
+    await tester.enterText(
+      find.byType(TextField),
+      'https://docs.google.com/spreadsheets/d/e/x/pub?output=csv',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Check these tickers'), findsNothing);
+
+    model.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets('an exchange prefix reaches the feed as a Yahoo symbol', (
+    tester,
+  ) async {
+    // LON:SPYL in the sheet must become SPYL.L, so one cell serves both
+    // GOOGLEFINANCE and the app.
+    SharedPreferences.setMockInitialValues({});
+
+    final model = await pumpImportScreen(
+      tester,
+      feed: feedResolving(),
+      source: sheetReturning('Ticker,Shares bought\nLON:SPYL,5\n'),
+    );
+
+    await tester.enterText(
+      find.byType(TextField),
+      'https://docs.google.com/spreadsheets/d/e/x/pub?output=csv',
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Import'));
+    await tester.pumpAndSettle();
+
+    expect(model.portfolioSymbols, ['SPYL.L']);
+
+    model.dispose();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('a failing ticker is named rather than silently dropped', (
     tester,
   ) async {

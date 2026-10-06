@@ -14,12 +14,30 @@ import 'storage.dart';
 /// An import mirrors the sheet, so it can remove as well as add. The screen
 /// reports both rather than a bare success, because a removal the user did not
 /// expect is the thing they most need to see.
+/// How far a holding's two prices disagree, and what they were.
+typedef PriceDisagreement = ({
+  double sheet,
+  double feed,
+  String currency,
+  double gap,
+});
+
+/// How far a sheet's price may sit from the feed's before the two are taken to
+/// be different instruments.
+///
+/// Generous on purpose. A sheet's price is a snapshot from whenever it last
+/// recalculated, so a day of drift, a dividend or an intraday move must never
+/// trip it. A quarter is far more than any of those and far less than the gap
+/// between two genuinely different securities.
+const priceDisagreementTolerance = 0.25;
+
 class ImportOutcome {
   const ImportOutcome({
     required this.added,
     required this.removed,
     required this.unchanged,
     required this.failed,
+    this.disagreed = const {},
   });
 
   /// In the sheet, not previously in the portfolio.
@@ -35,6 +53,15 @@ class ImportOutcome {
   /// dropping a holding because a request failed would be worse than showing
   /// it with an error.
   final Map<String, String> failed;
+
+  /// Symbols whose sheet price and feed price are too far apart to be the
+  /// same security.
+  ///
+  /// Not an error: the holding imports and prices normally. It is a prompt to
+  /// check the ticker, because the usual cause is a symbol that means one
+  /// thing to the sheet and another to the feed — a bare `SPYL` being the
+  /// case that prompted it.
+  final Map<String, PriceDisagreement> disagreed;
 
   bool get changedNothing => added.isEmpty && removed.isEmpty;
 }
@@ -420,6 +447,7 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
           scoredAt: raw.scoredAt,
           noDateReason: raw.noDateReason,
           dcfValue: raw.dcfValue,
+          sheetPrice: raw.sheetPrice,
         ),
       );
     }
@@ -476,7 +504,33 @@ class WatchlistModel extends ChangeNotifier with WidgetsBindingObserver {
       removed: outcome.removed,
       unchanged: outcome.unchanged,
       failed: batch.errors,
+      disagreed: _priceDisagreements(next),
     );
+  }
+
+  /// Which holdings the sheet and the feed price differently enough to doubt.
+  ///
+  /// Compared only where both figures exist: a holding the sheet does not
+  /// price, or one the feed could not reach, says nothing either way, and
+  /// guessing from one side would raise a warning with no evidence behind it.
+  Map<String, PriceDisagreement> _priceDisagreements(List<Holding> holdings) {
+    final out = <String, PriceDisagreement>{};
+    for (final holding in holdings) {
+      final sheet = holding.sheetPrice;
+      final quote = _quotes[holding.symbol];
+      if (sheet == null || quote == null) continue;
+
+      final gap = holding.priceGapFrom(quote.price);
+      if (gap == null || gap <= priceDisagreementTolerance) continue;
+
+      out[holding.symbol] = (
+        sheet: sheet,
+        feed: quote.price,
+        currency: quote.currency,
+        gap: gap,
+      );
+    }
+    return out;
   }
 
   /// Drops one holding from the portfolio.

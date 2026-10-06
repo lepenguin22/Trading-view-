@@ -6,6 +6,7 @@ import '../api/yahoo.dart' show describeError;
 import '../state/storage.dart';
 import '../state/watchlist.dart';
 import '../theme/app_theme.dart';
+import '../utils/format.dart';
 
 /// Imports a watchlist from a spreadsheet published as CSV.
 class ImportScreen extends StatefulWidget {
@@ -220,6 +221,41 @@ class _Result extends StatelessWidget {
               symbols: outcome.removed,
               color: c.down,
             ),
+          ],
+          if (outcome.disagreed.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Check these tickers',
+              style: TextStyle(
+                color: c.danger,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Your sheet and the price feed disagree about what these are '
+              'worth, by more than any day of drift explains. The usual cause '
+              'is a symbol that means one listing to your sheet and another to '
+              'the feed — add the exchange, as in LON:SPYL, and both will '
+              'agree.',
+              style: TextStyle(color: c.textMuted, fontSize: 12, height: 1.35),
+            ),
+            for (final entry in outcome.disagreed.entries)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '${entry.key} — sheet '
+                  '${formatPrice(entry.value.sheet, entry.value.currency)}, '
+                  'feed '
+                  '${formatPrice(entry.value.feed, entry.value.currency)}',
+                  style: TextStyle(
+                    color: c.textMuted,
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ),
           ],
           if (outcome.failed.isNotEmpty) ...[
             const SizedBox(height: 12),

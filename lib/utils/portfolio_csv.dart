@@ -80,6 +80,25 @@ const _moatScoreLeadingWords = {'moat', 'economic'};
 const _scoredHeaders = {'scored', 'score date', 'date scored', 'reviewed'};
 const _scoredLeadingWords = {'scored', 'analysed', 'analyzed', 'reviewed'};
 
+/// Header names that mark the sheet's own idea of the current price.
+///
+/// Read only to be disagreed with. The app prices holdings from the feed, not
+/// from the sheet — but a sheet that prices the same holding very differently
+/// is evidence the two are looking at different instruments, which is the one
+/// failure a portfolio importer cannot otherwise see.
+///
+/// Deliberately narrow. A bare `Price` is not matched: on a hand-kept sheet it
+/// is as likely to mean what was paid as what it trades at now, and reading a
+/// cost column as a live price would raise a warning on every row.
+const _livePriceHeaders = {
+  'current stock price',
+  'current price',
+  'last price',
+  'market price',
+  'share price',
+};
+const _livePriceLeadingWords = {'current'};
+
 /// Header names that mark a per-share fair value from a discounted cash flow.
 ///
 /// Every one of these names a value *per share*, which is the whole point: the
@@ -189,6 +208,14 @@ List<Holding> parseHoldingsCsv(String csv) {
     leading: _dcfLeadingWords,
     skip: claimed,
   );
+  if (dcfColumn != null) claimed.add(dcfColumn);
+
+  final livePriceColumn = _findColumn(
+    headerRow,
+    exact: _livePriceHeaders,
+    leading: _livePriceLeadingWords,
+    skip: claimed,
+  );
 
   final seen = <String>{};
   final out = <Holding>[];
@@ -236,6 +263,9 @@ List<Holding> parseHoldingsCsv(String csv) {
         dcfValue: dcfColumn == null
             ? null
             : parseMoney(_cell(rows[r], dcfColumn)),
+        sheetPrice: livePriceColumn == null
+            ? null
+            : parseMoney(_cell(rows[r], livePriceColumn)),
       ),
     );
   }
@@ -405,21 +435,109 @@ String _cell(List<dynamic> row, int column) {
 /// Sheets are hand-maintained: a ticker may be lower case, carry an exchange
 /// suffix, or the cell may hold a total or a stray note. Anything that is not
 /// plausibly a symbol is dropped rather than sent to the price feed.
+/// Google Finance's exchange prefix, mapped to Yahoo's symbol suffix.
+///
+/// The two feeds spell the same listing differently: a sheet built on
+/// `GOOGLEFINANCE()` holds `LON:SPYL`, while Yahoo wants `SPYL.L`. Translating
+/// here lets one cell serve both, which matters because the alternatives are
+/// both bad — a sheet that cannot price the holding, or an app that prices the
+/// wrong one.
+///
+/// **A bare symbol is not a safe fallback.** `SPYL` alone is the SPDR S&P 500
+/// UCITS ETF to Google and a different SPDR fund to Yahoo. That is the whole
+/// reason this table exists: stripping an exchange to get a bare symbol
+/// silently tracks the wrong instrument, which is worse than failing.
+///
+/// US exchanges map to the empty string, because Yahoo takes those bare.
+const exchangeSuffixes = <String, String>{
+  'NASDAQ': '',
+  'NYSE': '',
+  'NYSEARCA': '',
+  'NYSEAMERICAN': '',
+  'AMEX': '',
+  'BATS': '',
+  'CBOE': '',
+  'OTCMKTS': '',
+
+  'LON': '.L',
+  'ETR': '.DE',
+  'FRA': '.F',
+  'EPA': '.PA',
+  'AMS': '.AS',
+  'EBR': '.BR',
+  'BIT': '.MI',
+  'BME': '.MC',
+  'ELI': '.LS',
+  'VIE': '.VI',
+  'STO': '.ST',
+  'CPH': '.CO',
+  'HEL': '.HE',
+  'OSL': '.OL',
+  'SWX': '.SW',
+  'VTX': '.SW',
+  'WSE': '.WA',
+  'IST': '.IS',
+
+  'TYO': '.T',
+  'HKG': '.HK',
+  'SHA': '.SS',
+  'SHE': '.SZ',
+  'TPE': '.TW',
+  'KRX': '.KS',
+  'KOSDAQ': '.KQ',
+  'SGX': '.SI',
+  'KLSE': '.KL',
+  'IDX': '.JK',
+  'BKK': '.BK',
+  'NSE': '.NS',
+  'BOM': '.BO',
+  'ASX': '.AX',
+  'NZE': '.NZ',
+
+  'TSE': '.TO',
+  'CVE': '.V',
+  'BVMF': '.SA',
+  'BMV': '.MX',
+  'BCBA': '.BA',
+  'TLV': '.TA',
+  'JSE': '.JO',
+};
+
+/// Yahoo symbols are letters and digits with `. - ^ =` separators, e.g. VOD.L,
+/// BRK-B, ^FTSE, BTC-USD. Anything with a space or a currency mark is prose or
+/// a number, not a symbol.
+bool _isSymbolShaped(String upper, {bool allowAllDigits = false}) {
+  if (!RegExp(r'^[\^]?[A-Z0-9]+([.\-=][A-Z0-9]+)*$').hasMatch(upper)) {
+    return false;
+  }
+  // A bare cell of digits is a row number or a quantity, never a ticker — but
+  // behind an exchange prefix it is exactly a ticker, because Hong Kong and
+  // several Asian markets number theirs: HKG:0700 is Tencent. The prefix is
+  // what tells the two apart, so the guard only applies without one.
+  if (!allowAllDigits && RegExp(r'^[0-9]+$').hasMatch(upper)) return false;
+  return upper.length <= 15;
+}
+
 String? normaliseTicker(String raw) {
   final trimmed = raw.trim();
   if (trimmed.isEmpty) return null;
 
   final upper = trimmed.toUpperCase();
 
-  // Yahoo symbols are letters and digits with . - ^ = separators, e.g. VOD.L,
-  // BRK-B, ^FTSE, BTC-USD. Anything with a space or a currency mark is prose
-  // or a number, not a symbol.
-  if (!RegExp(r'^[\^]?[A-Z0-9]+([.\-=][A-Z0-9]+)*$').hasMatch(upper)) {
-    return null;
-  }
-  // A cell of digits is a row number or a quantity, never a ticker.
-  if (RegExp(r'^[0-9]+$').hasMatch(upper)) return null;
-  if (upper.length > 15) return null;
+  final colon = upper.indexOf(':');
+  if (colon > 0 && colon < upper.length - 1) {
+    final exchange = upper.substring(0, colon);
+    final symbol = upper.substring(colon + 1);
+    if (!_isSymbolShaped(symbol, allowAllDigits: true)) return null;
 
-  return upper;
+    final suffix = exchangeSuffixes[exchange];
+    // An exchange with no suffix here is kept whole rather than stripped to
+    // the bare symbol. The feed will reject "XYZ:SPYL" by name, and the import
+    // screen prints what it rejected — far better than quietly pricing
+    // whatever a bare SPYL happens to mean.
+    if (suffix == null) return upper;
+    return '$symbol$suffix';
+  }
+
+  return _isSymbolShaped(upper) ? upper : null;
 }

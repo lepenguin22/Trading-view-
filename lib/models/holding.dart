@@ -37,6 +37,7 @@ class Holding {
     this.scoredAt,
     this.noDateReason,
     this.dcfValue,
+    this.sheetPrice,
   });
 
   final String symbol;
@@ -107,6 +108,24 @@ class Holding {
     return (fair - price) / fair;
   }
 
+  /// What the sheet thinks this trades at, when it carries a price column.
+  ///
+  /// Never used to value anything — the feed does that. It is kept only so the
+  /// two can be compared: a sheet and a feed that price the same ticker very
+  /// differently are almost certainly looking at different instruments, and
+  /// that is a mistake nothing else in the import can see.
+  final double? sheetPrice;
+
+  /// How far [price] sits from what the sheet said, as a fraction of the
+  /// sheet's figure. Null when there is nothing to compare.
+  double? priceGapFrom(double price) {
+    final sheet = sheetPrice;
+    if (sheet == null || sheet <= 0 || !price.isFinite || price <= 0) {
+      return null;
+    }
+    return (price - sheet).abs() / sheet;
+  }
+
   /// True when either score exists.
   bool get hasScores => financialScore != null || moatScore != null;
 
@@ -145,6 +164,7 @@ class Holding {
     DateTime? scoredAt,
     NoDateReason? noDateReason,
     double? dcfValue,
+    double? sheetPrice,
   }) => Holding(
     symbol: symbol ?? this.symbol,
     shares: shares ?? this.shares,
@@ -154,6 +174,7 @@ class Holding {
     scoredAt: scoredAt ?? this.scoredAt,
     noDateReason: noDateReason ?? this.noDateReason,
     dcfValue: dcfValue ?? this.dcfValue,
+    sheetPrice: sheetPrice ?? this.sheetPrice,
   );
 
   Map<String, dynamic> toJson() => {
@@ -165,6 +186,7 @@ class Holding {
     if (scoredAt != null) 'scoredAt': scoredAt!.millisecondsSinceEpoch,
     if (noDateReason != null) 'noDateReason': noDateReason!.name,
     if (dcfValue != null) 'dcfValue': dcfValue,
+    if (sheetPrice != null) 'sheetPrice': sheetPrice,
   };
 
   static Holding? fromJson(Object? raw) {
@@ -175,6 +197,7 @@ class Holding {
     final cost = raw['costPerShare'];
     final scoredAt = raw['scoredAt'];
     final dcf = raw['dcfValue'];
+    final sheet = raw['sheetPrice'];
     return Holding(
       symbol: symbol,
       shares: shares is num && shares.isFinite ? shares.toDouble() : null,
@@ -193,6 +216,9 @@ class Holding {
       // Bounds re-checked on load as well: a stored zero or negative is not a
       // fair value, and would turn every margin of safety off it into nonsense.
       dcfValue: dcf is num && dcf.isFinite && dcf > 0 ? dcf.toDouble() : null,
+      sheetPrice: sheet is num && sheet.isFinite && sheet > 0
+          ? sheet.toDouble()
+          : null,
     );
   }
 
@@ -218,7 +244,8 @@ class Holding {
       other.moatScore == moatScore &&
       other.scoredAt == scoredAt &&
       other.noDateReason == noDateReason &&
-      other.dcfValue == dcfValue;
+      other.dcfValue == dcfValue &&
+      other.sheetPrice == sheetPrice;
 
   @override
   int get hashCode => Object.hash(
@@ -230,6 +257,7 @@ class Holding {
     scoredAt,
     noDateReason,
     dcfValue,
+    sheetPrice,
   );
 
   @override
