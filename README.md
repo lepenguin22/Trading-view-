@@ -1081,7 +1081,7 @@ chart and search share a single HTTP client and its connection pool.
 | Job | What it does |
 | --- | --- |
 | **Analyze and test** | `dart format --set-exit-if-changed`, `flutter analyze --fatal-infos --fatal-warnings`, `flutter test` |
-| **Build APK** | `flutter build apk --release`, uploaded as a downloadable artifact |
+| **Build APK** | `flutter build apk --release`, uploaded as an artifact, and published as a release asset on `main` |
 
 Formatting is a failure rather than a silent reformat, and analyzer infos are
 fatal alongside warnings — the project is clean today, and letting one through
@@ -1098,7 +1098,38 @@ why this needs no secrets, and equally why the APK it produces must not be
 distributed — that key is public. A real signed build still comes from a
 machine that has the keystore.
 
-The job then checks its own output: it reads the finished APK and fails if the
+### Installing it: one permanent link
+
+Every merge to `main` publishes a GitHub Release with the APK attached under a
+fixed name, which makes this link work forever and always serve the newest
+build:
+
+**https://github.com/lepenguin22/Trading-view-/releases/latest/download/ticker.apk**
+
+Nothing to look up, no login, no zip — it downloads as an `.apk` and taps
+straight into Android's installer.
+
+**Why not the artifact.** An Actions artifact is a zip behind a GitHub login.
+Signed out, the download button is not merely disabled, it is absent, and the
+direct URL answers 404 rather than saying why; a link tapped from a chat app
+opens in a webview that does not carry the browser's session, which looks
+identical. The artifact is still uploaded, because it is the right thing for a
+pull request — but it is the wrong thing for getting an app onto a phone.
+
+The release tag is the run number, which is monotonic and needs no version
+bookkeeping, and `--latest` is passed explicitly: the permanent URL resolves
+through it, and leaving GitHub to infer it from tag ordering would break the
+link the first time a tag sorted oddly. Publishing is `continue-on-error`, so a
+clash or a permissions change cannot turn a green build red — the release is a
+convenience, not the build's verdict.
+
+**The public-key caveat applies doubly here.** A release asset is
+world-downloadable, and this one is signed with a key that is in the
+repository. Anyone can sign an APK with it, so a release here is a personal test
+build and not something to pass on. Moving to a keystore held in repository
+secrets is the fix, at the cost of one uninstall when the signing key changes.
+
+The job also checks its own output: it reads the finished APK and fails if the
 package id is not the `.ci` variant, or if the signing certificate is not the
 committed one. Both are invisible in the build log, and both, when wrong,
 reach you only as an unexplained "App not installed".
